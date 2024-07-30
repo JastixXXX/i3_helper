@@ -1,4 +1,5 @@
 from i3ipc import Connection, con
+from .config import OUTPUTS, DEFAULT_ASSIGNMENT, NON_BANISHING_APPS
 
 
 class WindowsAccount:
@@ -6,45 +7,33 @@ class WindowsAccount:
 # Stores conflicting apps for the option to banish such windows to other workspaces
 # and applications with default assignment to workspaces to make "go default" work
     class App:
-    # A class to store information about one window 
+        """A class to store information about one window 
+
+            w_id: an id of the exact window
+            w_cls: class name of it
+            w_current_ws: the ws where window is currently located
+            w_default_ws: the assigned ws for this window if set
+            w_sharing: a list of app, allowed to share the ws
+        """
         def __init__(
             self,
             w_id: int,
             w_cls: str,
             w_current_ws: str,
-            w_default_ws: str | None = None,
-            w_conflicting: bool = False
+            w_default_ws: str|None = None,
+            w_sharing: list|None = None
         ) -> None:
             self.w_id = w_id
             self.w_cls = w_cls.lower()
             self.w_default_ws = w_default_ws
             self.w_current_ws = w_current_ws
-            self.w_conflicting = w_conflicting
-    # Named workspaces aren't always initialized, if empty. So, to create new
-    # ws bound to the keyboard keys, we need to know the amount of named ws
-    outputs = {
-        'DP-0': ['terminal', 'comm', 'misc'],
-        'HDMI-0': ['browser', 'busy', 'gaming']
-    }
+            self.w_sharing = w_sharing
+
     first_unnamed_ws = sum([ len(out) for out in outputs.values() ]) + 1
-    # apps which shouldn't appear on one workspace. They are assigned to the
-    # left screen and can't be used together on one ws
-    conflicting_apps = ['virt-manager', 'obs', 'keepassxc', 'mpv', 'obsidian']
-    # default assignment for "go default" function
-    default_assignment = {
-        'discord': 'comm',
-        'code': 'busy',
-        'firefox': 'browser',
-        'steam': 'gaming',
-        'obs': 'misc',
-        'mpv': 'misc',
-        'keepassxc': 'misc',
-        'virt-manager': 'misc',
-        'teamspeak': 'comm',
-        'obsidian': 'misc'
-    }
-    # all partiall classes to track
-    window_cls_to_track = list(default_assignment.keys()) + conflicting_apps
+
+    # all partiall classes to track. Not all windows have
+    # special rules to behave. Only those, which stated in config
+    window_cls_to_track = set([ app.name for app in DEFAULT_ASSIGNMENT ])
     # all named ws
     named_ws = [ ws for out in outputs.values() for ws in out ]
 
@@ -56,8 +45,8 @@ class WindowsAccount:
         """Checks if an app is an app of interest"""
         if w_cls is not None:
             w_cls_lower = w_cls.lower()
-            for partial_app_cls in self.window_cls_to_track:
-                if partial_app_cls in w_cls_lower:
+            for app_cls in self.window_cls_to_track:
+                if app_cls == w_cls_lower:
                     return True
         return False
            
@@ -76,8 +65,9 @@ class WindowsAccount:
         return ws_windows
 
     def _get_new_container(self, w_id: int) -> con.Con | None:
-        """The container, returned by the event handler, can't retrieve it's ws,
-        so it requires to find this container again"""
+        """The container, returned by the event handler,
+        can't retrieve it's ws, so it requires to find
+        this container again"""
         return self.i3.get_tree().find_by_id(w_id)
 
     def _move_window(
@@ -118,7 +108,8 @@ class WindowsAccount:
     def _window_class_to_partial(self, w_cls: str) -> str | None:
         """Turns a full class name to a partial one"""
         for cls in self.window_cls_to_track:
-            if cls.startswith(w_cls.lower()):
+            if w_cls.lower().startswith(cls):
+            # if cls.startswith(w_cls.lower()):
                 return cls
             
     def get_tracked_windows_by_class(self, w_cls: str) -> list:

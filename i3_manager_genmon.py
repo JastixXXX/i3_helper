@@ -187,22 +187,6 @@ def get_the_game_name(container: con.Con) -> str | None:
         if game in game_name:
             return game
 
-def get_newest_mtime(source_path: str) -> int:
-    """Returns mtime of a newest file in a given path,
-    rounded to int, ignoring dotfiles/dotdirs"""
-    max_mtime = 0
-    # recursivly walk the directory
-    for root, _, files in os.walk(source_path):
-        # ignore dotfiles/dotdirs
-        if not '/.' in root:
-            # iterate over all files in a current dir
-            for file in files:
-                # if a file is newer, than we met before - update the value
-                file_mtime = os.path.getmtime(os.path.join(root, file))
-                if file_mtime > max_mtime:
-                    max_mtime = file_mtime
-    return int(max_mtime)
-
 ############################ event handlers #############################
 
 def on_mode_change(i3, e) -> None:
@@ -333,7 +317,9 @@ def on_window_close(i3, e) -> None:
                     GDRIVE['script_path'],
                     BACKUPS[app_class].source_location,
                     gdrive_folder,
-                    '--ignore-directories',
+                    '--sync-direction',
+                    'mirror',
+                    '--ignore',
                     'path=.obsidian,type=all_files'
                 ])
                 os.chdir(current_dir)

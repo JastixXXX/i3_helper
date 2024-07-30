@@ -1,4 +1,4 @@
-<Profile name="User" version="3">
+<Profile name="User" version="5">
     <ActionSet name="Generic" actionSetType="" radialMenuNavigation="Right">
         <Action name="StartChatText">
             <Trigger>Return</Trigger>
