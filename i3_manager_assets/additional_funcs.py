@@ -2,6 +2,7 @@ import subprocess
 import os
 from config import BACKUPS
 from datetime import datetime
+from glob import glob
 
 
 def make_backup(app_cls: str) -> str:
@@ -72,7 +73,8 @@ def make_backup(app_cls: str) -> str:
             # turn it into int, we'll be comparing with int further
             backup_dir_content.append(dir)
     # get the newest mtime of the source location and check if backup not needed
-    newest_mtime = str(get_newest_mtime(BACKUPS[app_cls].source_location))
+    # newest_mtime = str(get_newest_mtime(BACKUPS[app_cls].source_location))
+    newest_mtime = '1734005290'
     if newest_mtime in backup_dir_content:
         return 'No new files found, backup is not required'
     # just in case check if there are any files in a directory
@@ -100,58 +102,63 @@ def make_backup(app_cls: str) -> str:
         if int(dir) > today_beginning:
             today_dir = dir
             break
-    source_files_path = os.path.join(BACKUPS[app_cls].source_location, '*')
+    # source_files_path = os.path.join(BACKUPS[app_cls].source_location, '*')
+    source_files = glob(os.path.join(BACKUPS[app_cls].source_location, '*'))
     full_backup_path = os.path.join(BACKUPS[app_cls].backup_dir, newest_mtime)
     # if we found today backup, update it
-    if today_dir is not None:
-        subprocess.run([
-            'cp', '-ur', source_files_path,
-            os.path.join(BACKUPS[app_cls].backup_dir, today_dir)
-        ])
-        return_message += f'Updated local today backup of <b>{app_cls}</b>'
-        # also rename the updated dir to reflect the newest file
-        os.rename(
-            os.path.join(BACKUPS[app_cls].backup_dir, today_dir),
-            full_backup_path,
-        )
-    # if today backup doesn't exist , create it
-    else:
-        # create a new directory
-        os.makedirs(full_backup_path)
-        # drop files there. Risky with shell, but I trust myself :)
-        subprocess.run(['cp', '-r', source_files_path, full_backup_path], shell=True)
-        return_message += f'Created new local today backup of <b>{app_cls}</b>'
-        # add newly created dir
-        backup_dir_content.append(newest_mtime)
-        # sort by names which are dates, reverse to get newest first
-        backup_dir_content.sort(reverse=True)
-        # if we created a folder, probably we have to remove redundant dirs:
-        # if we want only 3 or less backups, just simply remove others
-        # and we already know that backup_amount is positive
-        # we also should check if it's 0, because 0 is for endless amount
-        if 0 < BACKUPS[app_cls].backup_amount < 4:
-            # keep 3 or less dirs
-            remove_dirs_from_tail(backup_dir_content, BACKUPS[app_cls].backup_amount)
-        # backup_amount may be big but the amount of backups
-        # is still small, 4 or less, just skip such. start from 5
-        elif len(backup_dir_content) > 4:
-            # here comes more complicated logic, because we should
-            # keep two weeks backups and 3 days backups
-            # take the oldest dir, turn to int for arithmetic
-            # and add the threshold
-            oldest = int(backup_dir_content[-1]) + BACKUPS[app_cls].old_backup_interval.total_seconds()
-            # remove 3 every day backups and the oldest one from the end
-            backup_dir_content = backup_dir_content[3:-1]
-            dirs_to_remove = []
-            for dir in backup_dir_content:
-                # another proper backup is expected to be newer than the threshold
-                if oldest > int(dir):
-                    dirs_to_remove.append(dir)
-                else:
-                    # get new threshold
-                    oldest = int(dir) + BACKUPS[app_cls].old_backup_interval.total_seconds()
-            # remove the unnecessary dirs
-            remove_dirs_from_tail(dirs_to_remove, 0)
+    # if today_dir is not None:
+    #     subprocess.run([
+    #         'cp', '-ur', *source_files,
+    #         os.path.join(BACKUPS[app_cls].backup_dir, today_dir)
+    #     ])
+    #     return_message += f'Updated local today backup of <b>{app_cls}</b>'
+    #     # also rename the updated dir to reflect the newest file
+    #     os.rename(
+    #         os.path.join(BACKUPS[app_cls].backup_dir, today_dir),
+    #         full_backup_path,
+    #     )
+    # # if today backup doesn't exist , create it
+    # else:
+    # create a new directory
+    os.makedirs(full_backup_path)
+    # drop files there
+    subprocess.run(['cp', '-r', *source_files, full_backup_path])
+    return_message += f'Created new local today backup of <b>{app_cls}</b>'
+    # add newly created dir
+    backup_dir_content.append(newest_mtime)
+    # sort by names which are dates, reverse to get newest first
+    backup_dir_content.sort(reverse=True)
+    # if we created a folder, probably we have to remove redundant dirs:
+    # if we want only 3 or less backups, just simply remove others
+    # and we already know that backup_amount is positive
+    # we also should check if it's 0, because 0 is for endless amount
+    if 0 < BACKUPS[app_cls].backup_amount < 4:
+        # keep 3 or less dirs
+        remove_dirs_from_tail(backup_dir_content, BACKUPS[app_cls].backup_amount)
+    # backup_amount may be big but the amount of backups
+    # is still small, 4 or less, just skip such. start from 5
+    elif len(backup_dir_content) > 4:
+        # here comes more complicated logic, because we should
+        # keep two weeks backups and 3 days backups
+        # take the oldest dir, turn to int for arithmetic
+        # and add the threshold
+        oldest = int(backup_dir_content[-1]) + int(BACKUPS[app_cls].old_backup_interval.total_seconds())
+        # remove 3 every day backups and the oldest one from the end
+        backup_dir_content = backup_dir_content[3:-1]
+        dirs_to_remove = []
+        dirs_to_leave = []
+        for dir in backup_dir_content:
+            # another proper backup is expected to be newer than the threshold
+            if oldest > int(dir):
+                dirs_to_remove.append(dir)
+            else:
+                # get new threshold
+                oldest = int(dir) + BACKUPS[app_cls].old_backup_interval.total_seconds()
+                dirs_to_leave.append(dir)
+        if BACKUPS[app_cls].backup_amount != 0 and len(dirs_to_leave) > BACKUPS[app_cls].backup_amount:
+            dirs_to_remove += dirs_to_leave[:len(dirs_to_leave) - BACKUPS[app_cls].backup_amount]
+        # remove the unnecessary dirs
+        remove_dirs_from_tail(dirs_to_remove, 0)
     # on this point it's established that a backup is required and the
     # local one is created. Let's check the necessity of gdrive backup
     if not BACKUPS[app_cls].sync_gdrive:

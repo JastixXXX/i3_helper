@@ -15,7 +15,9 @@ class Backup:
     backup_amount: last three backups cover last
         three days when there were some changes.
         The rest - a backup per 2 weeks. 0 means
-        no limit to such backups
+        no limit to such backups. Doesn't work for
+        4 items though, because there is no way
+        to store intermediate backups
     old_backup_interval: the way to change that
         2 weeks from above
     sync_gdrive: a flag that backup on gdrive is
@@ -31,7 +33,7 @@ class Backup:
         self,
         source_location: str,
         backup_dir: str,
-        backup_amount: int = 3,
+        backup_amount: int = 4,
         old_backup_interval: timedelta = timedelta(weeks=2),
         sync_gdrive: bool = False,
         gdrive_args: list|None = None        
@@ -59,7 +61,9 @@ BACKUPS = {
     ),
     'testapp': Backup(
         source_location=expanduser('~/Documents/temp/1'),
-        backup_dir=expanduser('~/Documents/temp/2')
+        backup_dir=expanduser('~/Documents/temp/2'),
+        backup_amount=5,
+        old_backup_interval=timedelta(days=3)
     )
 }
 
