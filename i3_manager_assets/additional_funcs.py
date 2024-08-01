@@ -73,8 +73,7 @@ def make_backup(app_cls: str) -> str:
             # turn it into int, we'll be comparing with int further
             backup_dir_content.append(dir)
     # get the newest mtime of the source location and check if backup not needed
-    # newest_mtime = str(get_newest_mtime(BACKUPS[app_cls].source_location))
-    newest_mtime = '1734005290'
+    newest_mtime = str(get_newest_mtime(BACKUPS[app_cls].source_location))
     if newest_mtime in backup_dir_content:
         return 'No new files found, backup is not required'
     # just in case check if there are any files in a directory
@@ -96,7 +95,8 @@ def make_backup(app_cls: str) -> str:
         return f'Invalid backup amount. It should be 0(for endless backups) or more'
     # look for today directory on the backup dir
     # it should have timestamp in the name older than today beginning
-    today_beginning = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    # today_beginning = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    today_beginning = '1722536047'
     today_dir = None
     for dir in backup_dir_content:
         if int(dir) > today_beginning:
@@ -127,7 +127,7 @@ def make_backup(app_cls: str) -> str:
     # add newly created dir
     backup_dir_content.append(newest_mtime)
     # sort by names which are dates, reverse to get newest first
-    backup_dir_content.sort(reverse=True)
+    backup_dir_content.sort()
     # if we created a folder, probably we have to remove redundant dirs:
     # if we want only 3 or less backups, just simply remove others
     # and we already know that backup_amount is positive
@@ -142,23 +142,31 @@ def make_backup(app_cls: str) -> str:
         # keep two weeks backups and 3 days backups
         # take the oldest dir, turn to int for arithmetic
         # and add the threshold
-        oldest = int(backup_dir_content[-1]) + int(BACKUPS[app_cls].old_backup_interval.total_seconds())
-        # remove 3 every day backups and the oldest one from the end
-        backup_dir_content = backup_dir_content[3:-1]
+        oldest = int(backup_dir_content[0]) + int(BACKUPS[app_cls].old_backup_interval.total_seconds())
+        # add the one we start the count from
+        dirs_to_leave = [backup_dir_content[0]]
+        # remove 3 every day backups and the oldest one from the beginning
+        backup_dir_content = backup_dir_content[1:-3]
         dirs_to_remove = []
-        dirs_to_leave = []
+        # for dirs between the edge one and three days backups
         for dir in backup_dir_content:
-            # another proper backup is expected to be newer than the threshold
+            # check if the gap between them is smaller than expected
             if oldest > int(dir):
                 dirs_to_remove.append(dir)
             else:
                 # get new threshold
-                oldest = int(dir) + BACKUPS[app_cls].old_backup_interval.total_seconds()
+                oldest = int(dir) + int(BACKUPS[app_cls].old_backup_interval.total_seconds())
                 dirs_to_leave.append(dir)
-        if BACKUPS[app_cls].backup_amount != 0 and len(dirs_to_leave) > BACKUPS[app_cls].backup_amount:
-            dirs_to_remove += dirs_to_leave[:len(dirs_to_leave) - BACKUPS[app_cls].backup_amount]
+        if (BACKUPS[app_cls].backup_amount != 0 and
+            len(dirs_to_leave) > BACKUPS[app_cls].backup_amount) - 3:
+            dirs_to_remove += dirs_to_leave[:len(dirs_to_leave) + 3 - BACKUPS[app_cls].backup_amount]
         # remove the unnecessary dirs
-        remove_dirs_from_tail(dirs_to_remove, 0)
+        if dirs_to_remove:
+            remove_dirs_from_tail(dirs_to_remove, 0)
+            # backups_required = BACKUPS[app_cls].backup_amount - 3
+            # backups_have = len(dirs_to_leave)
+            # if backups_have > backups_required:
+            #     remove_dirs_from_tail(dirs_to_leave[::-1], backups_required)
     # on this point it's established that a backup is required and the
     # local one is created. Let's check the necessity of gdrive backup
     if not BACKUPS[app_cls].sync_gdrive:

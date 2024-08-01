@@ -62,8 +62,8 @@ BACKUPS = {
     'testapp': Backup(
         source_location=expanduser('~/Documents/temp/1'),
         backup_dir=expanduser('~/Documents/temp/2'),
-        backup_amount=5,
-        old_backup_interval=timedelta(days=3)
+        backup_amount=7,
+        old_backup_interval=timedelta(days=2)
     )
 }
 
