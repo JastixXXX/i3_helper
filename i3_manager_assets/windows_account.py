@@ -54,11 +54,10 @@ class WindowsAccount:
 
     def _check_if_should_be_tracked(self, w_cls: str) -> bool:
         """Checks if an app is an app of interest"""
-        if w_cls is not None:
-            w_cls_lower = w_cls.lower()
-            for app_cls in self.window_cls_to_track:
-                if app_cls == w_cls_lower:
-                    return True
+        w_cls_lower = w_cls.lower()
+        for app_cls in self.window_cls_to_track:
+            if app_cls == w_cls_lower:
+                return True
         return False
            
     def _window_accounted(self, w_id: int) -> App|None:
@@ -144,11 +143,8 @@ class WindowsAccount:
             if ws not in non_empty_ws:
                 return str(ws)
             
-    def _get_window(self, window: con.Con) -> App | None:
+    def _get_window(self, window: con.Con) -> App:
         """Creates a class for windows accounting from a container data"""
-        # just in case
-        if window.window_class is None:
-            return
         w_container = self._get_new_container(window.id)
         # if w_container is None:
         #     return
@@ -159,13 +155,12 @@ class WindowsAccount:
                 break
         # if settings is None:
         #     return
-        x = w_container.workspace()
         return self.App(
-            w_cls=w_cls,
+            w_cls=window.window_class,
             w_id=window.id,
             w_current_ws=w_container.workspace().name,
             w_default_ws=settings.ws,
-            w_current_output='',
+            w_current_output='', # TODO
             w_default_output=settings.output,
             w_sharing=settings.share_screen
         )
@@ -194,27 +189,26 @@ class WindowsAccount:
         for num, win in enumerate(self.windows):
             print(num, 'id', win.w_id, '| class', win.w_cls, '| default ws', win.w_default_ws, '| current ws', win.w_current_ws)
 
-    def init_windows(self) -> None:
+    def init_windows(self) -> None: # checked
         """Loops over all existing windows to store the windows of interest"""
         for win in self.i3.get_tree().leaves():
+            # we don't track pseudocontainers
+            if win.windows_class is None:
+                continue
             if self._check_if_should_be_tracked(win.window_class):
-                if (new_window := self._get_window(win)) is not None:
-                    self.windows.append(new_window)
+                self.windows.append(self._get_window(win))
 
     def window_opened(self, window: con.Con) -> None:
         """Function for window open event. Stores the windows of interest,
         banishes the conflicting windows if one is opened or residing on
         a predefined ws of an opened window. Unless there are already
         windows of the same class on the ws"""
-        # checks if it's a window of interest
-        if not self._check_if_should_be_tracked(window.window_class):
+        # if a pseudocontainer or not a window from config
+        if (window.windows_class is None or not
+            self._check_if_should_be_tracked(window.window_class)):
             return
         # extract data to the class App
         new_window = self._get_window(window)
-        if new_window is None:
-            return
-        # track such
-        #self.windows.append(new_window)
         # if such window class already exists somewhere, move window to this ws
         if (tracked := self.get_tracked_windows_by_class(new_window.w_cls)):
             # focused = self.i3.get_tree().find_focused()
@@ -238,7 +232,7 @@ class WindowsAccount:
             if len(ws_windows) > 1:
                 self._move_window(new_window)
     
-    def window_closed(self, window: con.Con) -> None:
+    def window_closed(self, window: con.Con) -> None: # checked
         """Removes windows from accounting if it was sthere"""
         self._remove_window_from_accounting(window.id)
 
