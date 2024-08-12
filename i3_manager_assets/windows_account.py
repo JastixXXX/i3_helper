@@ -1,19 +1,26 @@
 from i3ipc import Connection, con
-from .config import OUTPUTS, DEFAULT_ASSIGNMENT, NON_BANISHING_APPS
+from i3_manager_assets.config import (
+    OUTPUTS, DEFAULT_ASSIGNMENT, NON_BANISHING_APPS
+)
 
 
 class WindowsAccount:
 # A class to store information about the majority of applications (their windows)
-# Stores conflicting apps for the option to banish such windows to other workspaces
-# and applications with default assignment to workspaces to make "go default" work
+# Stores configured apps for the option to banish such windows to other workspaces
+# or put applications with default assignment to workspaces to make "go default" work
     class App:
-        """A class to store information about one window 
+        """A class to store information about one window.
+        if duplicateds the info from default assignment,
+        but shouldn't have too much of impact to the
+        performance
 
             w_id: an id of the exact window
             w_cls: class name of it
             w_current_ws: the ws where window is currently located
             w_default_ws: the assigned ws for this window if set
             w_sharing: a list of app, allowed to share the ws
+            w_default_output: the output where window assigned to be
+            w_current_output: the output where the windows is now
         """
         def __init__(
             self,
@@ -21,21 +28,25 @@ class WindowsAccount:
             w_cls: str,
             w_current_ws: str,
             w_default_ws: str|None = None,
-            w_sharing: list|None = None
+            w_sharing: list|None = None,
+            w_default_output: str|None = None,
+            w_current_output: str|None = None
         ) -> None:
             self.w_id = w_id
             self.w_cls = w_cls.lower()
             self.w_default_ws = w_default_ws
             self.w_current_ws = w_current_ws
             self.w_sharing = w_sharing
+            self.w_default_output = w_default_output
+            self.w_current_output = w_current_output
 
-    first_unnamed_ws = sum([ len(out) for out in outputs.values() ]) + 1
+    # first_unnamed_ws = sum([ len(out) for out in OUTPUTS.values() ]) + 1
 
     # all partiall classes to track. Not all windows have
     # special rules to behave. Only those, which stated in config
     window_cls_to_track = set([ app.name for app in DEFAULT_ASSIGNMENT ])
     # all named ws
-    named_ws = [ ws for out in outputs.values() for ws in out ]
+    # named_ws = [ ws for out in OUTPUTS.values() for ws in out ]
 
     def __init__(self, i3: Connection) -> None:
         self.windows = []
@@ -50,7 +61,7 @@ class WindowsAccount:
                     return True
         return False
            
-    def _window_accounted(self, w_id: int) -> App:
+    def _window_accounted(self, w_id: int) -> App|None:
         """Checks if an app is already stored in the class"""
         for win in self.windows:
             if w_id == win.w_id:
@@ -135,18 +146,29 @@ class WindowsAccount:
             
     def _get_window(self, window: con.Con) -> App | None:
         """Creates a class for windows accounting from a container data"""
-        # storing the partial class name, instead of an actual one
-        w_cls = self._window_class_to_partial(window.window_class)
+        # just in case
+        if window.window_class is None:
+            return
         w_container = self._get_new_container(window.id)
-        if w_container is not None:
-            return self.App(
-                window.id,
-                w_cls,
-                w_container.workspace().name,
-                self.default_assignment.get(w_cls),
-                # check if conflicting
-                w_cls in self.conflicting_apps
-            )
+        # if w_container is None:
+        #     return
+        settings = None
+        for app in DEFAULT_ASSIGNMENT:
+            if app.name == window.window_class.lower():
+                settings = app
+                break
+        # if settings is None:
+        #     return
+        x = w_container.workspace()
+        return self.App(
+            w_cls=w_cls,
+            w_id=window.id,
+            w_current_ws=w_container.workspace().name,
+            w_default_ws=settings.ws,
+            w_current_output='',
+            w_default_output=settings.output,
+            w_sharing=settings.share_screen
+        )
 
     def _remove_window_from_accounting(self, w_id: int) -> None:
         """Searches the windows by it's id and removes from the list self.windows"""
