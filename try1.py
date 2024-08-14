@@ -45,7 +45,8 @@ class OneScreen:
         self.active_ws = active_ws
         # h or v for the output
         self._split_type = split_type
-        # splith or splitv, the inner i3ipc value
+        # splith or splitv, the inner i3ipc value. Required, so we can
+        # check, if any changes happened and don't rewrite a file
         self.inner_split_type = None
 
     @property
@@ -98,10 +99,10 @@ def get_screens() -> None:
                                         name=screen.name,
                                         active_ws=screen.current_workspace
                                     )
-    # this is the only way get visible right now workspaces, get_tree() doesn't give this
-    for ws in i3.get_workspaces():
-        if ws.visible:
-            SCREENS[ws.output].active_ws = ws.name
+    # # this is the only way get visible right now workspaces, get_tree() doesn't give this
+    # for ws in i3.get_workspaces():
+    #     if ws.visible:
+    #         SCREENS[ws.output].active_ws = ws.name
     # getting layouts like splitv and splith for each visible workspace
     for ws in i3.get_tree().workspaces():
         for screen in SCREENS.values():
@@ -136,7 +137,7 @@ def find_in_scratchpad(w_class: str) -> list:
     scratchpad = i3.get_tree().scratchpad()
     return scratchpad.find_classed(w_class)
 
-def update_binding_modes(focused: con.Con) -> None:
+def update_binding_modes(focused: con.Con) -> None: # checked
     """Updates the information about layout types.
     Takes focused because this container is also used
     in caller functions"""

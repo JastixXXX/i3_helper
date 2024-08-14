@@ -2,6 +2,7 @@ from i3ipc import Connection, con
 from i3_manager_assets.config import (
     OUTPUTS, DEFAULT_ASSIGNMENT, NON_BANISHING_APPS
 )
+from time import sleep
 
 
 class WindowsAccount:
@@ -16,6 +17,12 @@ class WindowsAccount:
 
             w_id: an id of the exact window
             w_cls: class name of it
+            w_pid: the pid of the process who owns the opened
+                        window. This is the only was to distinguish
+                        between child windows of some app and child
+                        windows of another instance of the same app.
+                        Pid of a child window will be the same as
+                        the parent pid.
             w_current_ws: the ws where window is currently located
             w_default_ws: the assigned ws for this window if set
             w_sharing: a list of app, allowed to share the ws
@@ -26,6 +33,7 @@ class WindowsAccount:
             self,
             w_id: int,
             w_cls: str,
+            w_pid: int,
             w_current_ws: str,
             w_default_ws: str|None = None,
             w_sharing: list|None = None,
@@ -34,6 +42,7 @@ class WindowsAccount:
         ) -> None:
             self.w_id = w_id
             self.w_cls = w_cls.lower()
+            self.w_pid = w_pid
             self.w_default_ws = w_default_ws
             self.w_current_ws = w_current_ws
             self.w_sharing = w_sharing
@@ -76,8 +85,14 @@ class WindowsAccount:
 
     def _get_new_container(self, w_id: int) -> con.Con | None:
         """The container, returned by the event handler,
-        can't retrieve it's ws, so it requires to find
+        isn't integrated into a tree yet, thus stuff like
+        parent or ws can be None, so it requires to find
         this container again"""
+        new_con = self.i3.get_tree().find_by_id(w_id)
+        if new_con is not None:
+            return new_con
+        # give it another try with a bit more time
+        sleep(0.2)
         return self.i3.get_tree().find_by_id(w_id)
 
     def _move_window(
@@ -143,24 +158,28 @@ class WindowsAccount:
             if ws not in non_empty_ws:
                 return str(ws)
             
-    def _get_window(self, window: con.Con) -> App:
+    def _get_window(self, window: con.Con) -> App|None:
         """Creates a class for windows accounting from a container data"""
         w_container = self._get_new_container(window.id)
         # if w_container is None:
         #     return
         settings = None
         for app in DEFAULT_ASSIGNMENT:
-            if app.name == window.window_class.lower():
+            if app.name == w_container.window_class.lower():
                 settings = app
                 break
+        # a new window will never be output. so take parent
+        parent = w_container.parent
+        while parent.type != 'output':
+            parent = parent.parent
         # if settings is None:
         #     return
         return self.App(
-            w_cls=window.window_class,
-            w_id=window.id,
+            w_cls=w_container.window_class,
+            w_id=w_container.id,
             w_current_ws=w_container.workspace().name,
             w_default_ws=settings.ws,
-            w_current_output='', # TODO
+            w_current_output=parent.name,
             w_default_output=settings.output,
             w_sharing=settings.share_screen
         )
@@ -204,7 +223,7 @@ class WindowsAccount:
         a predefined ws of an opened window. Unless there are already
         windows of the same class on the ws"""
         # if a pseudocontainer or not a window from config
-        if (window.windows_class is None or not
+        if (window.window_class is None or not
             self._check_if_should_be_tracked(window.window_class)):
             return
         # extract data to the class App

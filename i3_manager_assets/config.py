@@ -75,30 +75,30 @@ COLORS = {
 
 # =============== ws assignment ===============
 # binding some workspaces to actual screens by their outputs
-# OUTPUTS = {
-#     'DP-0': {
-#         'ws': ['1', '2', '3'],
-#         'capacity': 1,
-#         'tag': 'left'
-#     },
-#     'HDMI-0': {
-#         'ws': ['4', '5', '6', '10'],
-#         'capacity': 2,
-#         'tag': 'right'
-#     }
-# }
 OUTPUTS = {
-    'Virtual1': {
+    'DP-0': {
         'ws': ['1', '2', '3'],
         'capacity': 1,
         'tag': 'left'
     },
-    'Virtual2': {
+    'HDMI-0': {
         'ws': ['4', '5', '6', '10'],
         'capacity': 2,
         'tag': 'right'
     }
 }
+# OUTPUTS = {
+#     'Virtual1': {
+#         'ws': ['1', '2', '3'],
+#         'capacity': 1,
+#         'tag': 'left'
+#     },
+#     'Virtual2': {
+#         'ws': ['4', '5', '6', '10'],
+#         'capacity': 2,
+#         'tag': 'right'
+#     }
+# }
 # apps windows are usually bulky enough to want to use it
 # solely on the screen. But these apps can appear on the same
 # screen without banishing to the new ws. All floating windows
