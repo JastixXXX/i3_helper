@@ -193,7 +193,7 @@ class WindowsAccount:
         """Loops over all existing windows to store the windows of interest"""
         for win in self.i3.get_tree().leaves():
             # we don't track pseudocontainers
-            if win.windows_class is None:
+            if win.window_class is None:
                 continue
             if self._check_if_should_be_tracked(win.window_class):
                 self.windows.append(self._get_window(win))

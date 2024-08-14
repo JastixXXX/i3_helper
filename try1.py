@@ -94,7 +94,10 @@ def get_screens() -> None:
     for screen in i3.get_outputs():
         # we need only physical screens
         if 'xroot' not in screen.name:
-            SCREENS[screen.name] = OneScreen(screen.name)
+            SCREENS[screen.name] = OneScreen(
+                                        name=screen.name,
+                                        active_ws=screen.current_workspace
+                                    )
     # this is the only way get visible right now workspaces, get_tree() doesn't give this
     for ws in i3.get_workspaces():
         if ws.visible:
