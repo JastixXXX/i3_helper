@@ -64,6 +64,18 @@ class WindowsAccount:
     #         if app_cls == w_cls_lower:
     #             return True
     #     return False
+    def _get_ws_assignment(self) -> None:
+        """Config is the only way to get workspaces,
+        assigned to exact outputs
+        """
+        with open('~/.config/i3/config') as f:
+            for line in f:
+                parts = line.strip().split()
+                if parts and parts[0] == 'workspace':
+                    workspace_num = parts[1]
+                    if 'output' in parts:
+                        output = parts[parts.index('output') + 1]
+                        workspace_to_output[workspace_num] = output
            
     def _window_accounted(self, w_id: int) -> App|None:
         """Checks if an app is already stored in the class"""
@@ -91,11 +103,7 @@ class WindowsAccount:
         sleep(0.2)
         return self.i3.get_tree().find_by_id(w_id)
 
-    def _move_window(
-            self,
-            win: App,
-            ws: str | None = None,
-            ) -> None:
+    def _move_window(self, win: App, ws: str | None = None) -> None:
         """Moves the given app to the other ws"""
         # find new window container just to grab the layout
         # just a window.command doesn't require it
@@ -107,7 +115,7 @@ class WindowsAccount:
         else:
             # if ws is None, then we should grab the layout and assign it to the proper
             # screen, because we are moving conflicting. Otherwise we are just
-            # moving a windows to an other windows of this class
+            # moving a window to an other windows of this class
             # find new ws
             if ws is None:
                 new_ws = self._search_ws_for_new_window()
@@ -126,12 +134,12 @@ class WindowsAccount:
             # update the location of the container
             self._update_ws(win.w_id)
     
-    def _window_class_to_partial(self, w_cls: str) -> str | None:
-        """Turns a full class name to a partial one"""
-        for cls in self.window_cls_to_track:
-            if w_cls.lower().startswith(cls):
-            # if cls.startswith(w_cls.lower()):
-                return cls
+    # def _window_class_to_partial(self, w_cls: str) -> str | None:
+    #     """Turns a full class name to a partial one"""
+    #     for cls in self.window_cls_to_track:
+    #         if w_cls.lower().startswith(cls):
+    #         # if cls.startswith(w_cls.lower()):
+    #             return cls
             
     def get_tracked_windows_by_class(self, w_cls: str) -> list:
         """Searches already opened windows of the same class, returns
@@ -141,14 +149,16 @@ class WindowsAccount:
     def _get_tracked_windows_by_id(self, w_id: int) -> list:
         """Searches a window with some id among already opened windows"""
         for win in self.windows:
-            if win.w_id == w_id:\
+            if win.w_id == w_id:
                 return win
 
-    def _search_ws_for_new_window(self) -> str:
-        """Conflicting apps have their predefined workspaces, but if there is already a such
-        app, a new ws should be found. First named workspaces on specified screen are taken,
-        if there are non such, a new number named ws will be created"""
-        # for the purpose to find the first empty ws, we have to know which aren't empty
+    def _search_ws_for_new_window(self) -> int:
+        """Apps have their predefined workspaces, but if the screen
+        capacity is exceeded or conflicting with other apps on the same ws
+        a new ws should be found. First named workspace on specified screen
+        is taken, if there are non such, a new number named ws will be created"""
+        # first take a look at occupied ws of the same output
+        #  if there is same space. Unless the app wants to reside alone
         non_empty_ws = []
         for ws in self.i3.get_tree().workspaces():
             # if there are any windows - it's not empty
@@ -206,11 +216,44 @@ class WindowsAccount:
         if (win := self._window_accounted(win_con.id)) is not None:
             win.w_current_ws = win_con.workspace().name     
 
+    def _detect_conflicts(self, ws_windows: list[App], new_app: App) -> bool:
+        """Two cases for screen sharing are available:
+        an app may don't care who to share with, or an app
+        may have a list of apps to share screen with. This
+        list can also be empty, so it doesn't want
+        other apps to come
+
+        Args:
+            ws_windows (list[App]): a list of already existing
+                    on the ws windows. They can be conflicting
+                    to each other
+            new_app (App): a new app, which was placed to the
+                    ws by default
+
+        Returns:
+            bool: True if a new app or any of existing apps
+                    don't want to share screen
+        """
+        # the new app has a list of allowed apps to share with
+        if (new_app.w_sharing is not None and
+            not all([ other_w.w_cls in new_app.w_sharing for other_w in ws_windows ])):
+            return True
+        # if any of other apps don't want to share with this one
+        for app in ws_windows:
+            if (app.w_sharing is not None and
+                not new_app.w_cls in app.w_sharing):
+                return True
+        # there are np conflicts
+        return False
+
     def _print_windows(self) -> None:
         """for debug purposes"""
         print('-------------------------')
         for num, win in enumerate(self.windows):
-            print(num, 'id', win.w_id, '| class', win.w_cls, '| default ws', win.w_default_ws, '| current ws', win.w_current_ws)
+            print(f'{num}. id: {win.w_id} | class: {win.w_cls} | default ws: '
+                  f'{win.w_default_ws} | current ws: {win.w_current_ws} | '
+                  f'default output: {win.w_default_output} | current output: {win.w_current_output}'
+                  f' | sharing: {win.w_sharing} | parent id: {win.w_parent}')
 
     def init_windows(self) -> None: # checked
         """Loops over all existing windows to store the windows of interest"""
@@ -220,7 +263,7 @@ class WindowsAccount:
                 continue
             self.windows.append(self._get_window(win))
 
-    def window_opened(self, window: con.Con, focused: int) -> None:
+    def window_opened(self, window: con.Con, focused: int) -> None: # checked
         """Function for window open event. Stores the windows of interest,
         banishes the conflicting windows if one is opened or residing on
         a predefined ws of an opened window. Unless there are already
@@ -245,7 +288,7 @@ class WindowsAccount:
             self._move_window(new_window, parent.w_current_ws)
             # now we can append it
             self.windows.append(new_window)
-            return            
+            return 
         # append the new window regardless
         self.windows.append(new_window)
         # if a new window is among non banising, nothing has to be done
@@ -256,13 +299,8 @@ class WindowsAccount:
         # we should banich window if the ws is full in it's output
         # capacity, or if new window or existing on this ws windows
         # dont' allow each other
-        if (
-            len(ws_windows) > OUTPUTS[new_window.w_default_output]['capacity'] or
-            not any()
-        )
-        # banish it only if it's not the only window on ws or there are no windows of the same class
-        # because if there are windows of the same class
-        if len(ws_windows) > 1:
+        if (len(ws_windows) > OUTPUTS[new_window.w_default_output]['capacity'] or
+            self._detect_conflicts(ws_windows, new_window)):
             self._move_window(new_window)
     
     def window_closed(self, window: con.Con) -> None: # checked
