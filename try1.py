@@ -29,6 +29,11 @@ SCREENS = {}
 # steam to show up on top of the game, because it's very hard to
 # get into the game again if this happened
 GAMES = []
+# since there is no way to distinguish a new window parent, then we
+# have to assumme that if a new window and focused window have the
+# same class, wery likely the focused window is the parent
+# of that new window. So we are gonna store it's id
+FOCUSED = None
 
 
 # contains an information about a screen state for quick output
@@ -276,6 +281,7 @@ def on_window_focus(i3, e) -> None:
     """Handler for the window focus event and also for binding event
     Changes the tiling indicator"""
 
+    global FOCUSED
     # to get the correct layout of a container, we have to take it from it's parent
     # the reason isn't really obvious. Unless it's a workspace
     focused = i3.get_tree().find_focused()
@@ -286,7 +292,8 @@ def on_window_focus(i3, e) -> None:
         # w_ps2 = i3.get_tree().find_named('Planetside2')
         # if w_ps2 and w_ps2[0].fullscreen_mode == 0:
         #     w_ps2[0].command('fullscreen enable')
-    update_binding_modes(focused)
+    update_binding_modes(focused.id)
+    FOCUSED = focused.id
 
 # def on_binding_change(i3, e) -> None:
 #     """Binding change handler. Excludes mode changes,
@@ -336,6 +343,10 @@ def on_window_focus(i3, e) -> None:
 
 # Initialize files for xfce4 genmons
 get_screens()
+# initialize the variable. Can happen that it will be
+# a workspace, instead of a window, but it won't
+# change anything to the logic
+FOCUSED = i3.get_tree().find_focused().id
 # Subscribe to events
 # i3.on(Event.MODE, on_mode_change)
 i3.on(Event.WINDOW_NEW, on_window_new)

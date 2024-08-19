@@ -17,43 +17,39 @@ class WindowsAccount:
 
             w_id: an id of the exact window
             w_cls: class name of it
-            w_pid: the pid of the process who owns the opened
-                        window. This is the only was to distinguish
-                        between child windows of some app and child
-                        windows of another instance of the same app.
-                        Pid of a child window will be the same as
-                        the parent pid.
             w_current_ws: the ws where window is currently located
             w_default_ws: the assigned ws for this window if set
             w_sharing: a list of app, allowed to share the ws
             w_default_output: the output where window assigned to be
             w_current_output: the output where the windows is now
+            w_parent_id: if a window was spawned by another window,
+                    the id of this another window be recorded here
         """
         def __init__(
             self,
             w_id: int,
             w_cls: str,
-            w_pid: int,
             w_current_ws: str,
             w_default_ws: str|None = None,
             w_sharing: list|None = None,
             w_default_output: str|None = None,
-            w_current_output: str|None = None
+            w_current_output: str|None = None,
+            w_parent_id: int|None = None
         ) -> None:
             self.w_id = w_id
             self.w_cls = w_cls.lower()
-            self.w_pid = w_pid
             self.w_default_ws = w_default_ws
             self.w_current_ws = w_current_ws
             self.w_sharing = w_sharing
             self.w_default_output = w_default_output
             self.w_current_output = w_current_output
+            self.w_parent_id = w_parent_id
 
     # first_unnamed_ws = sum([ len(out) for out in OUTPUTS.values() ]) + 1
 
     # all partiall classes to track. Not all windows have
     # special rules to behave. Only those, which stated in config
-    window_cls_to_track = set([ app.name for app in DEFAULT_ASSIGNMENT ])
+    # window_cls_to_track = set([ app.name for app in DEFAULT_ASSIGNMENT ])
     # all named ws
     # named_ws = [ ws for out in OUTPUTS.values() for ws in out ]
 
@@ -61,13 +57,13 @@ class WindowsAccount:
         self.windows = []
         self.i3 = i3
 
-    def _check_if_should_be_tracked(self, w_cls: str) -> bool:
-        """Checks if an app is an app of interest"""
-        w_cls_lower = w_cls.lower()
-        for app_cls in self.window_cls_to_track:
-            if app_cls == w_cls_lower:
-                return True
-        return False
+    # def _check_settings_exist(self, w_cls: str) -> bool:
+    #     """Checks if an app is an app of interest"""
+    #     w_cls_lower = w_cls.lower()
+    #     for app_cls in self.window_cls_to_track:
+    #         if app_cls == w_cls_lower:
+    #             return True
+    #     return False
            
     def _window_accounted(self, w_id: int) -> App|None:
         """Checks if an app is already stored in the class"""
@@ -141,6 +137,12 @@ class WindowsAccount:
         """Searches already opened windows of the same class, returns
         a list of them"""
         return [ win for win in self.windows if win.w_cls == w_cls ]
+    
+    def _get_tracked_windows_by_id(self, w_id: int) -> list:
+        """Searches a window with some id among already opened windows"""
+        for win in self.windows:
+            if win.w_id == w_id:\
+                return win
 
     def _search_ws_for_new_window(self) -> str:
         """Conflicting apps have their predefined workspaces, but if there is already a such
@@ -158,31 +160,33 @@ class WindowsAccount:
             if ws not in non_empty_ws:
                 return str(ws)
             
-    def _get_window(self, window: con.Con) -> App|None:
+    def _get_window(self, window: con.Con, parent_id: int|None = None) -> App|None:
         """Creates a class for windows accounting from a container data"""
         w_container = self._get_new_container(window.id)
-        # if w_container is None:
-        #     return
-        settings = None
-        for app in DEFAULT_ASSIGNMENT:
-            if app.name == w_container.window_class.lower():
-                settings = app
-                break
         # a new window will never be output. so take parent
         parent = w_container.parent
         while parent.type != 'output':
             parent = parent.parent
-        # if settings is None:
-        #     return
-        return self.App(
+        # create an App with parametersh which exist for sure
+        app = self.App(
             w_cls=w_container.window_class,
             w_id=w_container.id,
             w_current_ws=w_container.workspace().name,
-            w_default_ws=settings.ws,
             w_current_output=parent.name,
-            w_default_output=settings.output,
-            w_sharing=settings.share_screen
+            w_parent_id=parent_id            
         )
+        # now check if there are special settings for this app
+        settings = None
+        for def_ass in DEFAULT_ASSIGNMENT:
+            if def_ass.name == app.w_cls:
+                settings = def_ass
+                break
+        if settings is None:
+            return app
+        app.w_default_ws =settings.ws
+        app.w_default_output = settings.output
+        app.w_sharing = settings.share_screen
+        return app
 
     def _remove_window_from_accounting(self, w_id: int) -> None:
         """Searches the windows by it's id and removes from the list self.windows"""
@@ -214,42 +218,52 @@ class WindowsAccount:
             # we don't track pseudocontainers
             if win.window_class is None:
                 continue
-            if self._check_if_should_be_tracked(win.window_class):
-                self.windows.append(self._get_window(win))
+            self.windows.append(self._get_window(win))
 
-    def window_opened(self, window: con.Con) -> None:
+    def window_opened(self, window: con.Con, focused: int) -> None:
         """Function for window open event. Stores the windows of interest,
         banishes the conflicting windows if one is opened or residing on
         a predefined ws of an opened window. Unless there are already
         windows of the same class on the ws"""
-        # if a pseudocontainer or not a window from config
-        if (window.window_class is None or not
-            self._check_if_should_be_tracked(window.window_class)):
+        # if a pseudocontainer
+        if window.window_class is None:
             return
-        # extract data to the class App
-        new_window = self._get_window(window)
-        # if such window class already exists somewhere, move window to this ws
-        if (tracked := self.get_tracked_windows_by_class(new_window.w_cls)):
-            # focused = self.i3.get_tree().find_focused()
-            # if (focused.window_class is not None and
-            #     focused.id != new_window.w_id and
-            #     self._window_class_to_partial(focused.window_class) == new_window.w_cls):
-            # self._move_window(new_window, self._window_accounted(focused.id).w_current_ws)
-            # we can't know which exact window called the new one, so we add it to the first occurence i.e. tracked[0]
-            self._move_window(new_window, tracked[0].w_current_ws)  
+        # extract data to the class App, taking parent id if
+        # assuming a parent exists. Also get last focused window
+        # by it's given id
+        focused_con = self._get_new_container(focused)
+        new_window = self._get_window(
+            window,
+            focused if focused_con.window_class == window.window_class else None
+        )
+        # if a new window was spawned by an existing one -
+        # move new one on it's ws
+        if new_window.w_parent_id is not None:
+            # get tracked parent window
+            parent = self._get_tracked_windows_by_id(new_window.w_parent_id)
+            # add a new window to it's presumable parent
+            self._move_window(new_window, parent.w_current_ws)
             # now we can append it
             self.windows.append(new_window)
-            return
+            return            
         # append the new window regardless
         self.windows.append(new_window)
-        # if the new window is conflicting
-        if new_window.w_conflicting:
-            # request the list of windows where the new window residing
-            ws_windows = self._get_tracked_windows_of_ws(new_window.w_current_ws)
-            # banish it only if it's not the only window on ws or there are no windows of the same class
-            # because if there are windows of the same class
-            if len(ws_windows) > 1:
-                self._move_window(new_window)
+        # if a new window is among non banising, nothing has to be done
+        if new_window.w_cls is NON_BANISHING_APPS:
+            return
+        # request the list of windows where the new window residing
+        ws_windows = self._get_tracked_windows_of_ws(new_window.w_current_ws)
+        # we should banich window if the ws is full in it's output
+        # capacity, or if new window or existing on this ws windows
+        # dont' allow each other
+        if (
+            len(ws_windows) > OUTPUTS[new_window.w_default_output]['capacity'] or
+            not any()
+        )
+        # banish it only if it's not the only window on ws or there are no windows of the same class
+        # because if there are windows of the same class
+        if len(ws_windows) > 1:
+            self._move_window(new_window)
     
     def window_closed(self, window: con.Con) -> None: # checked
         """Removes windows from accounting if it was sthere"""

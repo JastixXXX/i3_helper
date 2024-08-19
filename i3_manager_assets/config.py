@@ -102,7 +102,9 @@ OUTPUTS = {
 # apps windows are usually bulky enough to want to use it
 # solely on the screen. But these apps can appear on the same
 # screen without banishing to the new ws. All floating windows
-# also don't get banished
+# also don't get banished.They are taken into account though
+# if they already exist on the screen at the moment new window
+# is opened
 NON_BANISHING_APPS = [
     'terminal',
     'mousepad'
