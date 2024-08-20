@@ -56,7 +56,9 @@ class WindowsAccount:
     def __init__(self, i3: Connection) -> None:
         self.windows = []
         self.i3 = i3
-
+        # get data about ws assignment to outputs
+        ws_to_output = []
+        self._get_ws_assignment()
     # def _check_settings_exist(self, w_cls: str) -> bool:
     #     """Checks if an app is an app of interest"""
     #     w_cls_lower = w_cls.lower()
@@ -69,13 +71,18 @@ class WindowsAccount:
         assigned to exact outputs
         """
         with open('~/.config/i3/config') as f:
+            # parse line by line
             for line in f:
+                # split by spaces
                 parts = line.strip().split()
-                if parts and parts[0] == 'workspace':
-                    workspace_num = parts[1]
-                    if 'output' in parts:
-                        output = parts[parts.index('output') + 1]
-                        workspace_to_output[workspace_num] = output
+                # we are looking for lines like 'workspace 2 output primary',
+                # 'workspace 5 output VGA1 LVDS1' or 'workspace "2: vim" output VGA1'
+                if parts and parts[0] == 'workspace' and 'output' in parts:
+                    output = parts.index('output')
+                    # get everything between "workspace" and "output"
+                    workspace = ' '.join(parts[1:output])
+                    # taking the first (and likely the only) output
+                    self.ws_to_output[workspace] = parts[output + 1]
            
     def _window_accounted(self, w_id: int) -> App|None:
         """Checks if an app is already stored in the class"""
@@ -152,11 +159,12 @@ class WindowsAccount:
             if win.w_id == w_id:
                 return win
 
-    def _search_ws_for_new_window(self) -> int:
+    def _search_ws_for_new_window(self, app: App) -> int:
         """Apps have their predefined workspaces, but if the screen
         capacity is exceeded or conflicting with other apps on the same ws
-        a new ws should be found. First named workspace on specified screen
-        is taken, if there are non such, a new number named ws will be created"""
+        a new ws should be found. We are gonna simply go from ws num 1 to
+        30, which is a sane number and see if can place our app there. It
+        should also stay on the same screen, as it's now"""
         # first take a look at occupied ws of the same output
         #  if there is same space. Unless the app wants to reside alone
         non_empty_ws = []
@@ -291,8 +299,10 @@ class WindowsAccount:
             return 
         # append the new window regardless
         self.windows.append(new_window)
-        # if a new window is among non banising, nothing has to be done
-        if new_window.w_cls is NON_BANISHING_APPS:
+        # if a new window is among non banising or floating,
+        # nothing has to be done
+        if (new_window.w_cls in NON_BANISHING_APPS or
+            window.floating in ['auto_on', 'user_on']):
             return
         # request the list of windows where the new window residing
         ws_windows = self._get_tracked_windows_of_ws(new_window.w_current_ws)

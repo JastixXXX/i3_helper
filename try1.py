@@ -91,7 +91,6 @@ i3 = Connection()
 picom_manager = PicomManager(timer_delay=5)
 windows_account = WindowsAccount(i3)
 windows_account.init_windows()
-workspaces = i3.get_workspaces()
 windows_account._search_ws_for_new_window()
 
 def get_screens() -> None:
