@@ -3,6 +3,7 @@ from i3_manager_assets.config import (
     OUTPUTS, DEFAULT_ASSIGNMENT, NON_BANISHING_APPS
 )
 from time import sleep
+from os.path import expanduser
 
 
 class WindowsAccount:
@@ -57,7 +58,6 @@ class WindowsAccount:
         self.windows = []
         self.i3 = i3
         # get data about ws assignment to outputs
-        ws_to_output = []
         self._get_ws_assignment()
     # def _check_settings_exist(self, w_cls: str) -> bool:
     #     """Checks if an app is an app of interest"""
@@ -70,7 +70,13 @@ class WindowsAccount:
         """Config is the only way to get workspaces,
         assigned to exact outputs
         """
-        with open('~/.config/i3/config') as f:
+        self.ws_to_output = {}
+        # get all outputs
+        for screen in self.i3.get_outputs():
+            # we need only physical screens
+            if 'xroot' not in screen.name:
+                self.ws_to_output[screen.name] = []
+        with open(expanduser('~/.config/i3/config'), 'r') as f:
             # parse line by line
             for line in f:
                 # split by spaces
@@ -82,7 +88,11 @@ class WindowsAccount:
                     # get everything between "workspace" and "output"
                     workspace = ' '.join(parts[1:output])
                     # taking the first (and likely the only) output
-                    self.ws_to_output[workspace] = parts[output + 1]
+                    output = parts[output + 1]
+                    # if screen doesn't exist, don't record it
+                    if not output in self.ws_to_output.keys():
+                        continue
+                    self.ws_to_output[output] = workspace
            
     def _window_accounted(self, w_id: int) -> App|None:
         """Checks if an app is already stored in the class"""
@@ -165,6 +175,25 @@ class WindowsAccount:
         a new ws should be found. We are gonna simply go from ws num 1 to
         30, which is a sane number and see if can place our app there. It
         should also stay on the same screen, as it's now"""
+        # we also should take into account existing ws-es, because
+        # they could be moved to another screen, so ditch those,
+        # which reside on the another screen(s)
+        ws_existing = {
+            'this_screen': [],
+            'other_screens': []
+        }
+        for ws in self.i3.get_tree().workspaces():
+            if ws.ipc_data['output'] == app.w_current_output:
+                ws_existing['this_screen'].append(ws.num)
+            else:
+                ws_existing['other_screens'].append(ws.num)
+        for num in range(1, 31):
+            # ws is already on another screen or assigned to it
+            if num in ws_existing['other_screens'] or :
+                continue
+
+
+
         # first take a look at occupied ws of the same output
         #  if there is same space. Unless the app wants to reside alone
         non_empty_ws = []
@@ -181,16 +210,12 @@ class WindowsAccount:
     def _get_window(self, window: con.Con, parent_id: int|None = None) -> App|None:
         """Creates a class for windows accounting from a container data"""
         w_container = self._get_new_container(window.id)
-        # a new window will never be output. so take parent
-        parent = w_container.parent
-        while parent.type != 'output':
-            parent = parent.parent
         # create an App with parametersh which exist for sure
         app = self.App(
             w_cls=w_container.window_class,
             w_id=w_container.id,
             w_current_ws=w_container.workspace().name,
-            w_current_output=parent.name,
+            w_current_output=w_container.ipc_data['output'],
             w_parent_id=parent_id            
         )
         # now check if there are special settings for this app

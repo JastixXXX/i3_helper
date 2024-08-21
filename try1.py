@@ -87,11 +87,14 @@ class OneScreen:
 
 # Create the Connection object that can be used to send commands and subscribe
 # to events.
-i3 = Connection()
+i3 = Connection('/run/user/1000/i3/ipc-socket.549')
 picom_manager = PicomManager(timer_delay=5)
 windows_account = WindowsAccount(i3)
 windows_account.init_windows()
-windows_account._search_ws_for_new_window()
+# x = i3.get_tree().workspaces()
+# for n in x:
+#     z = n.workspace()
+# windows_account._search_ws_for_new_window()
 
 def get_screens() -> None:
     """Gets the information about the initial state of workspaces, like
