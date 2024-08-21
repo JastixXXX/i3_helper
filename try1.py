@@ -87,7 +87,8 @@ class OneScreen:
 
 # Create the Connection object that can be used to send commands and subscribe
 # to events.
-i3 = Connection('/run/user/1000/i3/ipc-socket.549')
+# i3 = Connection('/run/user/1000/i3/ipc-socket.549')
+i3 = Connection()
 picom_manager = PicomManager(timer_delay=5)
 windows_account = WindowsAccount(i3)
 windows_account.init_windows()
@@ -199,7 +200,7 @@ def on_window_new(i3, e) -> None:
     # if it's not any window of interest
     if e.container.window_class is None:
         return
-    windows_account.window_opened(e.container)
+    windows_account.window_opened(e.container, FOCUSED)
     # grab only notifications and only if it's expected when NOTIFICATION_CON is ''
     if NOTIFICATION_CON == '' and e.container.window_class == 'Xfce4-notifyd':
         NOTIFICATION_CON = e.container
@@ -296,7 +297,7 @@ def on_window_focus(i3, e) -> None:
         # w_ps2 = i3.get_tree().find_named('Planetside2')
         # if w_ps2 and w_ps2[0].fullscreen_mode == 0:
         #     w_ps2[0].command('fullscreen enable')
-    update_binding_modes(focused.id)
+    update_binding_modes(focused)
     FOCUSED = focused.id
 
 # def on_binding_change(i3, e) -> None:
