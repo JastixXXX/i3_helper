@@ -106,7 +106,7 @@ OUTPUTS = {
 # if they already exist on the screen at the moment new window
 # is opened
 NON_BANISHING_APPS = [
-    'terminal',
+    'xfce4-terminal',
     'mousepad'
 ]
 

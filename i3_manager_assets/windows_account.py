@@ -106,7 +106,8 @@ class WindowsAccount:
                 new_ws = self._search_ws_for_new_window(win)
                 # always switch to the moving ws, otherwise the other one, currently
                 # focused will be moved.
-                new_win_con.command(f'move container to workspace {new_ws}; workspace {new_ws};')
+                new_win_con.command(f'move container to workspace {new_ws}; workspace {new_ws}; '
+                                    f'move workspace to output {win.w_current_output};')
                 # # update the location of the container
                 # win.w_current_ws = new_ws
                 # new_win_con.command(f'move container to workspace {new_ws}; workspace {new_ws}; '
@@ -130,7 +131,11 @@ class WindowsAccount:
         capacity is exceeded or conflicting with other apps on the same ws
         a new ws should be found. We are gonna simply go from ws num 1 to
         30, which is a sane number and see if can place our app there. It
-        should also stay on the same screen, as it's now"""
+        should also stay on the same screen, as it's now
+        Sidenote - named workspaces have no ws.num, they have "-1".
+        All of them. So we should either add named workspaces to the list
+        of workspaces we are gonna check for new window placement, or
+        totally ignore them. We are gonna ignore."""
         # we also should take into account existing ws-es, because
         # they could be moved to another screen, so ditch those,
         # which reside on the another screen(s)
@@ -139,6 +144,9 @@ class WindowsAccount:
             'other_screens': []
         }
         for ws in self.i3.get_tree().workspaces():
+            # ignore named workspaces
+            if ws.num == -1:
+                continue
             if ws.ipc_data['output'] == app.w_current_output:
                 ws_existing['this_screen'].append(ws.num)
             else:
@@ -148,7 +156,8 @@ class WindowsAccount:
             if num in ws_existing['other_screens']:
                 continue
             # ws is assigned to another screen in config
-            if self.ws_to_output.get(num, '') != app.w_current_output:
+            ws_assign = self.ws_to_output.get(str(num))
+            if ws_assign is not None and ws_assign != app.w_current_output:
                 continue
             # if ws is empty - it's the result, which means it's
             # not included in existing ws
@@ -262,14 +271,17 @@ class WindowsAccount:
         # if a pseudocontainer
         if window.window_class is None:
             return
-        # extract data to the class App, taking parent id if
-        # assuming a parent exists. Also get last focused window
-        # by it's given id
-        focused_con = self._get_new_container(focused)
-        new_window = self._get_window(
-            window,
-            focused if focused_con.window_class == window.window_class else None
-        )
+        # if it's among so called NON_BANISHING_APPS, i.e. apps
+        # which require to have multiple windows for different tasks
+        # we are not gonna look for a parent
+        new_window = self._get_window(window)
+        self.windows.append(new_window)
+        if new_window.w_cls in NON_BANISHING_APPS:
+            return
+        # get parent id, assuming a parent exists and it's the previously
+        # focused window. Also get this prev focused window by it's given id
+        if self._get_new_container(focused).window_class == window.window_class:
+            new_window.w_parent_id = focused
         # if a new window was spawned by an existing one -
         # move new one on it's ws
         if new_window.w_parent_id is not None:
@@ -277,15 +289,10 @@ class WindowsAccount:
             parent = self._get_tracked_windows_by_id(new_window.w_parent_id)
             # add a new window to it's presumable parent
             self._move_window(new_window, parent.w_current_ws)
-            # now we can append it
-            self.windows.append(new_window)
-            return 
-        # append the new window regardless
-        self.windows.append(new_window)
-        # if a new window is among non banising or floating,
-        # nothing has to be done
-        if (new_window.w_cls in NON_BANISHING_APPS or
-            window.floating in ['auto_on', 'user_on']):
+            return
+        # if the new window is floating and presumably has no parent,
+        # nothing has to be done further
+        if window.floating in ['auto_on', 'user_on']:
             return
         # request the list of windows where the new window residing
         ws_windows = self._get_tracked_windows_of_ws(new_window.w_current_ws)
