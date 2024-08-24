@@ -166,8 +166,7 @@ class WindowsAccount:
             # if ws isn't empty, we should check, if can place
             # this app there
             ws_windows = self._get_tracked_windows_of_ws(app.w_current_ws)
-            if (len(ws_windows) > OUTPUTS[app.w_current_output]['capacity'] or
-                self._detect_conflicts(ws_windows, app)):
+            if self._check_window_should_be_moved(app):
                 continue
             return num
             
@@ -244,6 +243,19 @@ class WindowsAccount:
                 return True
         # there are np conflicts
         return False
+    
+    def _check_window_should_be_moved(self, app: App) -> bool:
+        """Checks if an app should be moved from the ws
+        where it was placed by default
+        """
+        ws_windows = self._get_tracked_windows_of_ws(app.w_current_ws)
+        # we should banich window if the ws is full in it's output
+        # capacity, or if new window or existing on this ws windows
+        # dont' allow each other
+        if (len(ws_windows) > OUTPUTS[app.w_current_output]['capacity'] or
+            self._detect_conflicts(ws_windows, app)):
+            return True
+        return False
 
     def _print_windows(self, func_name: str = '') -> None:
         """for debug purposes"""
@@ -275,20 +287,24 @@ class WindowsAccount:
         # which require to have multiple windows for different tasks
         # we are not gonna look for a parent
         new_window = self._get_window(window)
-        self.windows.append(new_window)
         if new_window.w_cls in NON_BANISHING_APPS:
             return
         # get parent id, assuming a parent exists and it's the previously
         # focused window. Also get this prev focused window by it's given id
-        if self._get_new_container(focused).window_class == window.window_class:
+        parent = self._get_tracked_windows_by_id(focused)
+        # move a new window to it's parent, if it's not already there and
+        # ofc if their classes are the same
+        if parent.w_cls == new_window.w_cls:
             new_window.w_parent_id = focused
+        self.windows.append(new_window)
         # if a new window was spawned by an existing one -
-        # move new one on it's ws
-        if new_window.w_parent_id is not None:
-            # get tracked parent window
-            parent = self._get_tracked_windows_by_id(new_window.w_parent_id)
+        # move new one on it's ws, unless the presumable
+        # parent is already closed
+        if (new_window.w_parent_id is not None and
+            new_window.w_current_ws != parent.w_current_ws):
             # add a new window to it's presumable parent
             self._move_window(new_window, parent.w_current_ws)
+            print('!!!!!!!!!!!!!!!!!', parent.w_current_ws)
             return
         # if the new window is floating and presumably has no parent,
         # nothing has to be done further
@@ -299,8 +315,7 @@ class WindowsAccount:
         # we should banich window if the ws is full in it's output
         # capacity, or if new window or existing on this ws windows
         # dont' allow each other
-        if (len(ws_windows) > OUTPUTS[new_window.w_current_output]['capacity'] or
-            self._detect_conflicts(ws_windows, new_window)):
+        if self._check_window_should_be_moved(new_window):
             self._move_window(new_window)
     
     def window_closed(self, window: con.Con) -> None: # checked
@@ -323,6 +338,15 @@ class WindowsAccount:
     
     def go_default(self) -> None:
         """Reassigns accounted windows to their default workspaces"""
+        # apps who are assigned to exact workspaces have priority
+        # over those, who are assigned to an output, so place
+        # such first
+        for win in self.windows:
+            if win.w_current_ws != win.w_default_ws:
+               self._move_window(win, win.w_default_ws)
+        # we also try to not move windows if it's not necessary
+        # if an app is, for example, already placed on the assigned
+        # ws, and has no reasons to be banished, it will stay
         # firstly loop over windows and if they don't reside
         # on their default workspaces - move them
         conflicting = []
