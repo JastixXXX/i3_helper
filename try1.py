@@ -10,7 +10,9 @@ from i3_manager_assets.additional_funcs import (
     process_searcher, PicomManager, get_the_game_name
 )
 from i3_manager_assets.windows_account import WindowsAccount
-from i3_manager_assets.config import COLORS, BACKUPS
+from i3_manager_assets.config import (
+    COLORS, BACKUPS, NOP_SHORTCUTS, EXCHANGE_SCREENS
+)
 from pyperclip import paste
 
 #################### just shared variables ###################
@@ -43,7 +45,7 @@ class OneScreen:
     One screen - one instance
     """
 
-    def __init__(self, name: str, active_ws: str | None = None, split_type: str | None = None) -> None:
+    def __init__(self, name: str, active_ws: str|None=None, split_type: str|None=None) -> None:
         # turns screen output name into a file name which starts with i3
         self.name = f'/tmp/i3_{name}'
         # currently active workspace
@@ -109,14 +111,9 @@ def get_screens() -> None:
                                         name=screen.name,
                                         active_ws=screen.current_workspace
                                     )
-    # # this is the only way get visible right now workspaces, get_tree() doesn't give this
-    # for ws in i3.get_workspaces():
-    #     if ws.visible:
-    #         SCREENS[ws.output].active_ws = ws.name
-    # getting layouts like splitv and splith for each visible workspace
     for ws in i3.get_tree().workspaces():
         for screen in SCREENS.values():
-            if screen.active_ws == ws.name:
+            if screen.active_ws == ws.num:
                 screen.split_type = ws.layout
                 screen.write_state()
 
@@ -127,6 +124,7 @@ def rewrite_all_binding_modes() -> None:
 
     for v in SCREENS.values():
         v.write_state()
+
 
 def close_old_notification() -> None:
     """Closes the current, binding mode related notification and
@@ -139,13 +137,6 @@ def close_old_notification() -> None:
     # set to defaul
     NOTIFICATION_CON = None
 
-def find_in_scratchpad(w_class: str) -> list:
-    """Helper function. Searches for a specified window class in the
-    scratchpad. We could just store container scratchpad references,
-    but this is more universal option"""
-
-    scratchpad = i3.get_tree().scratchpad()
-    return scratchpad.find_classed(w_class)
 
 def update_binding_modes(focused: con.Con) -> None: # checked
     """Updates the information about layout types.
@@ -164,34 +155,34 @@ def update_binding_modes(focused: con.Con) -> None: # checked
 
 ############################ event handlers #############################
 
-# def on_mode_change(i3, e) -> None:
-#     """Handler of mode change event"""
+def on_mode_change(i3, e) -> None: # checked
+    """Handler of the mode change event"""
 
-#     global NOTIFICATION_CON, BINDING_MODE
-#     # close a notification from the previous binding mode if happened to be on
-#     close_old_notification()
-#     # for the genmon we should take only the first word of a binding mode name
-#     # and show the rest in a notification
-#     new_mode = e.change.split('[')
-#     match len(new_mode):
-#         # this shouldn't happen, but if it happened then better to know about it
-#         case 0:
-#             sendmessage('Binding mode без названия', 'Не красиво', timeout='2700')
-#         # default, resize - one word modes
-#         case 1:
-#             BINDING_MODE = new_mode[0]
-#             rewrite_all_binding_modes()
-#         # long string modes like launch for example
-#         case _:
-#             # make this variable not None so on_window_new will catch the notification window reference
-#             NOTIFICATION_CON = ''
-#             BINDING_MODE = new_mode[0].strip()
-#             rewrite_all_binding_modes()
-#             # split mode name ('Launch [f]irefox [c]hrome') to the mode name and it's bindings (if any)
-#             # so we can show it in notification with a title and a list of options
-#             sendmessage(BINDING_MODE, '[' + '\n['.join(new_mode[1:]))
+    global NOTIFICATION_CON, BINDING_MODE
+    # close a notification from the previous binding mode if happened to be on
+    close_old_notification()
+    # for the genmon we should take only the first word of a binding mode name
+    # and show the rest in a notification
+    new_mode = e.change.split('[')
+    match len(new_mode):
+        # this shouldn't happen, but if it happened then better to know about it
+        case 0:
+            sendmessage('Binding mode без названия', 'Не красиво', timeout='2700')
+        # default, resize - one word modes
+        case 1:
+            BINDING_MODE = new_mode[0]
+            rewrite_all_binding_modes()
+        # long string modes like launch for example
+        case _:
+            # make this variable not None so on_window_new will catch the notification window reference
+            NOTIFICATION_CON = ''
+            BINDING_MODE = new_mode[0].strip()
+            rewrite_all_binding_modes()
+            # split mode name ('Launch [f]irefox [c]hrome') to the mode name and it's bindings (if any)
+            # so we can show it in notification with a title and a list of options
+            sendmessage(BINDING_MODE, '[' + '\n['.join(new_mode[1:]))
 
-def on_window_new(i3, e) -> None:
+def on_window_new(i3, e) -> None: # checked
     """Handler of opening new windows event, saves the container
     into a global variable, if the container belongs to notification daemon,
     saves app class to FOR_BACKUP if the app requires a backup"""
@@ -215,9 +206,9 @@ def on_window_new(i3, e) -> None:
     # if a window isn't a game, don't continue
     if game is None and not 'steam_app_' in e.container.window_class:
         return
-    # if picom was already killed or a killer timer was started
-    # no point to continue. Just put the information about
-    # this window in the games windows array
+    # if GAMES has any element, then picom either was already
+    # killed or there is a timer function to kill it
+    # no point to request again
     if GAMES:
         GAMES.append(e.container.id)
         return
@@ -226,7 +217,8 @@ def on_window_new(i3, e) -> None:
     # kill picom. The function will decide if it\s necessary
     picom_manager.postponed_picom_killer()
 
-def on_workspace_focus(i3, e) -> None:
+
+def on_workspace_focus(i3, e) -> None: # checked
     """Changes the current workspace number for a screen"""
 
     output = e.current.ipc_data['output']
@@ -234,7 +226,8 @@ def on_workspace_focus(i3, e) -> None:
         SCREENS[output].active_ws = e.current.name
         SCREENS[output].write_state()
 
-def on_window_close(i3, e) -> None:
+
+def on_window_close(i3, e) -> None: # checked
     """Backups dir/files when the application, which needs it, is closed.
     Keeps three backups total, overwrites the oldest one. Also tracks
     if a game from GAMES was closed, so the GAME_MODE should be set to off"""
@@ -258,29 +251,26 @@ def on_window_close(i3, e) -> None:
             sendmessage('Backup results', make_backup(app_class), '4000')
     # the rest is related only to the opened
     # and maybe closing now games
-    if not GAMES:
+    if not GAMES or e.container.id not in GAMES:
         return
-    # remove steam from the scratchpad if it's there
-    if steam_win := find_in_scratchpad('Steam'):
-        for win in steam_win:
-            windows_account.bring_from_scratchpad(win)
-            # win.command('move container to workspace gaming; floating disable; floating enable')
+    # try to show steam
+    windows_account.show_steam(GAMES)
     # if it's in tray - windows don't exist but processes
     # do, then bring the window
-    elif not i3.get_tree().find_classed('Steam') and process_searcher('steam'):
+    if not i3.get_tree().find_classed('Steam') and process_searcher('steam'):
         subprocess.Popen(['steam'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # fix particles in ini
-    if 'Planetside2' in e.container.window_class:
+    if 'Planetside' in e.container.window_title:
         fix_particles()
     # remove the closing game window
-    if e.container.id in GAMES:
-        GAMES.remove(e.container.id)
+    GAMES.remove(e.container.id)
     # if there are still games, no point to start the
     # picom. Do it only when the last game window is closed
     if GAMES:
         return
     # start picom. The function will decide if it\s necessary
     picom_manager.postponed_picom_starter()
+
 
 def on_window_focus(i3, e) -> None:
     """Handler for the window focus event and also for binding event
@@ -292,59 +282,64 @@ def on_window_focus(i3, e) -> None:
     focused = i3.get_tree().find_focused()
     # this is the only way to intercept Steam from appearing over game
     if GAMES and focused.window_class.lower() == 'steam':
-        e.container.command('move scratchpad')
-        # # in a case ps2 lost it's fullscreen mode
-        # w_ps2 = i3.get_tree().find_named('Planetside2')
-        # if w_ps2 and w_ps2[0].fullscreen_mode == 0:
-        #     w_ps2[0].command('fullscreen enable')
+        windows_account.hide_steam(GAMES, e.container)
     update_binding_modes(focused)
     FOCUSED = focused.id
 
-# def on_binding_change(i3, e) -> None:
-#     """Binding change handler. Excludes mode changes,
-#     the processing is equal to on_window_focus"""
 
-#     if e.binding.command == 'nop':
-#         shortcut = (*e.binding.event_state_mask, e.binding.symbol)
-#         match NOP_SHORTCUTS.get(shortcut):
-#             case 'assign_windows':
-#                 windows_account.go_default()
-#                 i3.command('workspace comm; workspace browser')
-#                 sendmessage('Go default', 'Applications were brought to their assigned workspaces', '2700')
-#             case 'open_mkv':
-#                 mpv = subprocess.Popen(['mpv', paste()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-#                 sendmessage('mpv from clipboard', f'mpv was opened with pid {mpv.pid}')
-#             case 'switch_windows':
-#                 visible_ws = []
-#                 # search for wisible workspaces, save their ids
-#                 for ws in i3.get_workspaces():
-#                     if ws.visible:
-#                         visible_ws.append({'name': ws.name, 'id': ws.ipc_data['id']})
-#                 # this shouldn't happen, but in a case of screens amount change
-#                 if len(visible_ws) != 2:
-#                     return
-#                 # get all the direct children of each visible ws, they are in focus
-#                 tree = i3.get_tree()
-#                 for ws in visible_ws:
-#                     ws['focus'] = tree.find_by_id(ws['id']).focus
-#                 # exchange windows between ws using temp ws
-#                 # otherwise if there is a pseudo container, and it was moved let's say to the
-#                 # right, it will soak up all the windows which are already on the right
-#                 def move_focus(focus: list, ws: str) -> None:
-#                     """Searcher all container ids in focus list and moves them 
-#                     to a specifies ws"""
-#                     for foc in focus:
-#                         tree.find_by_id(foc).command(f'move container to workspace {ws}')
-#                 move_focus(visible_ws[0]['focus'], 'temp')
-#                 move_focus(visible_ws[1]['focus'], visible_ws[0]['name'])
-#                 move_focus(visible_ws[0]['focus'], visible_ws[1]['name'])
-#             case _:
-#                 return
-#     if 'mode' not in e.binding.command:
-#         update_binding_modes(i3.get_tree().find_focused())
+def on_binding_change(i3, e) -> None:
+    """Binding change handler. Excludes mode changes,
+    the processing is equal to on_window_focus"""
 
-# def on_window_move(i3, e) -> None:
-#     windows_account.window_moved(e.container)
+    if e.binding.command.startswith('nop'):
+        shortcut = (*e.binding.event_state_mask, e.binding.symbol)
+        match NOP_SHORTCUTS.get(shortcut):
+            case 'go_default':
+                windows_account.go_default()
+                i3.command('workspace 1; workspace 4')
+                sendmessage('Go default', 'Applications were brought to their assigned workspaces', '2700')
+            case 'open_mpv':
+                mpv = subprocess.Popen(['mpv', paste()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                sendmessage('mpv from clipboard', f'mpv was opened with pid {mpv.pid}')
+            case 'exchange_screens':
+                # search for wisible workspaces, save their ids
+                visible_ws = []
+                for ws in i3.get_workspaces():
+                    if ws.visible and ws.output in EXCHANGE_SCREENS:
+                        visible_ws.append(ws.ipc_data['id'])
+                # we can command to children windows of a ws.
+                # but first get actual containers from ids
+                ws_cons = []
+                for ws_id in visible_ws:
+                    # if any of these workspaces are named - return
+                    # we don't workwith such
+                    if (ws_con := i3.get_tree().find_by_id(ws_id)).num == -1:
+                        return
+                    ws_cons.append(ws_con)
+                # use temporary ws99 as a buffer
+                ws_cons[1].command_children('move container to workspace 99')
+                ws_cons[0].command_children(f'move container to workspace {ws_cons[1].num}')
+                # find ws99 container
+                for ws in i3.get_tree().workspaces():
+                    if ws.num == 99:
+                        ws.command_children(f'move container to workspace {ws_cons[0].num}')
+                        break
+            case 'move_to_left':
+                windows_account.move_left_right('move_to_left', i3.get_tree().find_focused())
+            case 'move_to_right':
+                windows_account.move_left_right('move_to_right', i3.get_tree().find_focused())
+            case _:
+                return
+    if 'mode' not in e.binding.command:
+        update_binding_modes(i3.get_tree().find_focused())
+
+
+def on_window_move(i3, e) -> None:
+    windows_account.window_moved(e.container)
+
+
+def on_window_floating(i3, e) -> None:
+    windows_account.window_floating_changed(e.container)
 
 # Initialize files for xfce4 genmons
 get_screens()
@@ -353,13 +348,14 @@ get_screens()
 # change anything to the logic
 FOCUSED = i3.get_tree().find_focused().id
 # Subscribe to events
-# i3.on(Event.MODE, on_mode_change)
+i3.on(Event.MODE, on_mode_change)
 i3.on(Event.WINDOW_NEW, on_window_new)
 i3.on(Event.WORKSPACE_FOCUS, on_workspace_focus)
 i3.on(Event.WINDOW_CLOSE, on_window_close)
 i3.on(Event.WINDOW_FOCUS, on_window_focus)
-# i3.on(Event.BINDING, on_binding_change)
-# i3.on(Event.WINDOW_MOVE, on_window_move)
+i3.on(Event.BINDING, on_binding_change)
+i3.on(Event.WINDOW_MOVE, on_window_move)
+i3.on(Event.WINDOW_FLOATING, on_window_floating)
 # Start the main loop and wait for events to come in.
 try:
     i3.main()

@@ -220,7 +220,6 @@ def fix_particles() -> None:
         if rewrite_requires:
             with open(file_path, 'w') as f:
                 f.writelines(new_ini_file)
-
     check_strings(f'{PS2_DIR}UserOptions.ini', {'ParticleLOD': '0'})
 
 

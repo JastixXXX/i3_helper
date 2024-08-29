@@ -75,30 +75,18 @@ COLORS = {
 
 # =============== ws assignment ===============
 # binding some workspaces to actual screens by their outputs
+# we could parse it from the config, but more simple to add them here
 OUTPUTS = {
     'DP-0': {
-        'ws': ['1', '2', '3'],
-        'capacity': 1,
-        'tag': 'left'
+        'ws': [1, 2, 3],
+        'capacity': 1
     },
     'HDMI-0': {
-        'ws': ['4', '5', '6', '10'],
-        'capacity': 2,
-        'tag': 'right'
+        'ws': [4, 5, 6, 10],
+        'capacity': 2
     }
 }
-# OUTPUTS = {
-#     'Virtual1': {
-#         'ws': ['1', '2', '3'],
-#         'capacity': 1,
-#         'tag': 'left'
-#     },
-#     'Virtual2': {
-#         'ws': ['4', '5', '6', '10'],
-#         'capacity': 2,
-#         'tag': 'right'
-#     }
-# }
+
 # apps windows are usually bulky enough to want to use it
 # solely on the screen. But these apps can appear on the same
 # screen without banishing to the new ws. All floating windows
@@ -116,13 +104,10 @@ class DefaultAssignment:
     Only for apps with special ws binding.
 
         name: app class in lower case
-        share_screen: a list of apps which won't be
-            banished when opened next to the current one.
-            Except those, which are in NON_BANISHING_APPS.
-            [] doen't specify apps, so any app can fit in
-            if fits into the output capacity. None means
-            no apps will share the screen even if the
-            output capacity allows
+        share_screen: if an app wants to reside on the
+            screen alone, put False. True means otehr apps
+            can be opened on the same screen if output
+            capacity allows
         output: output name, if an app has no assigned ws
             but should be opened on the exact screen
         ws: ws where the app should be opened. If there is
@@ -132,23 +117,24 @@ class DefaultAssignment:
     Makes sense to state either output or ws, not both
     """
     name: str
-    share_screen: list|None = None
+    share_screen: bool = True
     output: str|None = None
-    ws: str|None = None
+    ws: int|None = None
 
 # apps assignment, mostly for "go default" mode
 DEFAULT_ASSIGNMENT = [
-    DefaultAssignment('discord', ws='2'),
-    DefaultAssignment('code', [], ws='5'),
-    DefaultAssignment('firefox', ws='4'), # firefox
-    DefaultAssignment('steam', ws='6'),
+    DefaultAssignment('discord', ws=2),
+    DefaultAssignment('code', share_screen=False, ws=5),
+    DefaultAssignment('firefox', ws=4), # firefox
+    DefaultAssignment('steam', ws=6),
     DefaultAssignment('obs', output=list(OUTPUTS.keys())[0]),
-    DefaultAssignment('mpv', [], output=list(OUTPUTS.keys())[0]),
+    DefaultAssignment('mpv', share_screen=False, output=list(OUTPUTS.keys())[0]),
     DefaultAssignment('virt-manager', output=list(OUTPUTS.keys())[0]),
     DefaultAssignment('keepassxc', output=list(OUTPUTS.keys())[0]),
-    DefaultAssignment('teamspeak', ws='2'),
+    DefaultAssignment('teamspeak', ws=2),
     DefaultAssignment('obsidian', output=list(OUTPUTS.keys())[0]),
     DefaultAssignment('wireshark', output=list(OUTPUTS.keys())[0]),
+    DefaultAssignment('transmission-gtk', ws=10),
 ]
 
 # ini file for planetside2 to fix before the start
@@ -156,12 +142,25 @@ PS2_DIR = '/mnt/kllisre/SteamLibrary/steamapps/common/PlanetSide 2/'
 # I can't come up with commands which i3 can't perform
 # so it's important to use nop for new modes
 NOP_SHORTCUTS = {
-    ('shift', 'Mod4', 'd'): 'go_default',
-    ('shift', 'Mod4', 'm'): 'open_mkv',
-    ('shift', 'Mod4', 's'): 'exchange_screens',
-    ('shift', 'Mod4', 'l'): 'move_to_tag_left',
-    ('shift', 'Mod4', 'r'): 'move_to_tag_right',
+    ('ctrl', 'Mod4', 'd'): 'go_default',
+    ('ctrl', 'Mod4', 'm'): 'open_mpv',
+    ('ctrl', 'Mod4', 's'): 'exchange_screens',
+    ('ctrl', 'Mod4', 'j'): 'move_to_left',
+    ('ctrl', 'Mod4', 'semicolon'): 'move_to_right',
 }
+
+# screen tags, which whindows will be exchanged with each
+# other when 'exchange_screens' was used
+EXCHANGE_SCREENS = ('DP-0', 'HDMI-0')
+
+# bindings to which output is left, which is right. Used
+# in 'move_to_left' and 'move_to_right'. These are actually
+# just tags, can be more of them
+LEFT_RIGHT = {
+    'move_to_left': 'DP-0',
+    'move_to_right': 'HDMI-0'
+}
+
 # Non steam games, which also require picom to turn off.
 # For the steam games there are already checks 
 GAMES = []
