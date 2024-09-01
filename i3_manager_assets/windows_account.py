@@ -83,11 +83,13 @@ class WindowsAccount:
         return self.i3.get_tree().find_by_id(w_id)
 
 
-    def _move_window(self, win: App, ws: int=0, output: str|None=None) -> None:
+    def _move_window(self, win: App, ws: int=0, output: str|None=None) -> None|int:
         """Moves the given app to another ws. Finds
         new ws or moves to a given one. If output is given,
         searches a ws there. Ofc it makes no sense to
-        provide ws if output is given"""
+        provide ws if output is given.
+        Returns new workspace, found for the window
+        """
 
         # find new window container just to grab the layout
         # just a window.command doesn't require it
@@ -106,6 +108,7 @@ class WindowsAccount:
                     f'move workspace to output {output if output is not None else win.w_current_output}; '
                     f'layout {new_win_con.parent.layout}'
                 )
+                return new_ws
             else:
                 new_win_con.command(f'move container to workspace {ws}; workspace {ws}')
                
@@ -131,6 +134,11 @@ class WindowsAccount:
         of workspaces we are gonna check for new window placement, or
         totally ignore them. We are gonna ignore."""
 
+        # # if a window has parent, it should always go to his parent
+        # if app.w_parent_id is not None:
+        #     for win in self.windows:
+        #         if win.w_id == app.w_parent_id:
+        #             return win.w_current_ws
         if output is None:
             output = app.w_default_output or app.w_current_output
         ws_on_other_screens = []
@@ -360,24 +368,120 @@ class WindowsAccount:
         and outputs. Doesn't solve conflicts because it will require
         very heavy logic"""
 
+        def win_upd_ws_output(win: WindowsAccount.App, ws: int, output: str) -> None:
+            """Updates attributes"""
+            setattr(win, 'w_current_ws', ws)
+            setattr(win, 'w_current_output', output)
+
+        def find_win_to_fill_gap(
+                wins: list[WindowsAccount.App],
+                start_ws: int,
+                stop_ws: int,
+                output: str,
+                vacant_ws_wins: int,
+                ws_to_output: dict,
+                wins_to_move: list[WindowsAccount.App]
+            ) -> WindowsAccount.App|None:
+            """Finds a proper window to fill a gap in the sequence
+            """
+            # just in a case ws 99, which we use as a tmp during
+            # windows exchange, is still active
+            if stop_ws > 30:
+                stop_ws = 30
+            for num in range(stop_ws, start_ws + 1, -1):
+                pass
+        # we should get what ws is where. Some are predefined
+        # in the config, but not all of them
+        # map ws to the output name
+        ws_to_out = {}
+        # map ws to the it's capacity
+        ws_to_cap = {}
+        for out, props in OUTPUTS.items():
+            for ws in props['ws']:
+                ws_to_out[ws] = out
+                ws_to_cap[ws] = props['capacity']
+        for ws in self.i3.get_tree().workspaces():
+            # skip named, if exist
+            if ws.num == -1:
+                continue
+            if ws_to_out.get(ws.num) is None:
+                ws_to_out[ws.num] = ws.ipc_data['output']
+        # move all child windows to a twm ws99, thus we can move
+        # them to their parents later, but do it virtually
+        for win in self.windows:
+            if win.w_parent_id is not None:
+                win.w_current_ws = 99
         # loop over all windows and place them according to ws
         # and output settings, where ws is more priority
         for win in self.windows:
-            if (win.w_default_ws and
-                win.w_current_ws != win.w_default_ws):
-               self._move_window(win, win.w_default_ws)
-               # don't check the output setings
-               continue
+            if win.w_current_ws == 99:
+                continue
+            if win.w_default_ws and win.w_current_ws != win.w_default_ws:
+                # if it's non banishing app, we don't move a window
+                # if a window of the same class is already there
+                if win.w_cls in NON_BANISHING_APPS:
+                    target_ws_wins = self._get_tracked_windows_of_ws(win.w_default_ws)
+                    if win.w_cls in [ other.w_cls for other in target_ws_wins ]:
+                        continue
+                self._move_window(win, ws=win.w_default_ws)
+                # update win props
+                win_upd_ws_output(win, win.w_default_ws, ws_to_out[win.w_default_ws])
+                # all_wins.remove(win)
+                # don't check the output setings
+                continue
             if (win.w_default_output is not None and
                 win.w_current_output != win.w_default_output):
-                self._move_window(win, output=win.w_default_output)            
-        # now move windows to their parents if they have such
-        for win in self.windows:
-            # is ws is set, a window will already be with it's parent
-            if win.w_default_ws or win.w_parent_id is None:
+                new_ws = self._move_window(win, output=win.w_default_output)
+                win_upd_ws_output(win, new_ws, win.w_default_output)
+        # go through all and move conflicting windows
+        all_ws = [ ws for ws in self.i3.get_tree().workspaces() if not ws.num in [-1, 99] ]
+        for num in range(1, all_ws[-1].num + 1):
+            # all windows, already sitting on the ws
+            vacant_ws_wins = self._get_tracked_windows_of_ws(num, skip_floating=True)
+            if not vacant_ws_wins:
                 continue
-            parent = self._get_tracked_windows_by_id(win.w_parent_id)
-            self._move_window(win, parent.w_current_ws)
+            # we don't count non banishing with assigned ws and always don't count kids
+            assigned_wins = [ win for win in vacant_ws_wins if win.w_default_ws == num ]
+            # if an assigned window is non sharing - we don't care, they stay
+            non_sharing_assigned = False
+            non_sharing_wins = []
+            for win in vacant_ws_wins:
+                if win.w_sharing == False:
+                    if win.w_default_ws != num:
+                        non_sharing_wins.append(win)
+                    else:
+                        non_sharing_assigned = True
+            # if there is any assigned window, move all non sharing
+            if assigned_wins:
+                for win in non_sharing_wins:
+                    new_ws = self._move_window(win)
+                    win_upd_ws_output(win, new_ws, win.w_default_output)
+            # if there is any non sharing move all other
+            elif non_sharing_wins:
+                vacant_ws_wins.remove[non_sharing_wins][0]
+                for win in vanact_ws_wins:
+                    new_ws = self._move_window(win)
+                    win_upd_ws_output(win, new_ws, win.w_default_output)
+                continue
+            all_other_wins = [ win for win in vacant_ws_wins if win not in assigned_wins ]
+            capacity_remains = ws_to_cap.get(num, 1) - len(assigned_wins)
+            if not all_other_wins:
+                continue
+            if capacity_remains <= 0 or non_sharing_assigned:
+                for win in all_other_wins:
+                    new_ws = self._move_window(win)
+                    win_upd_ws_output(win, new_ws, win.w_default_output)
+            else:
+                for win in all_other_wins[capacity_remains:]:
+                    new_ws = self._move_window(win)
+                    win_upd_ws_output(win, new_ws, win.w_default_output)                    
+        ws99 = self._get_tracked_windows_of_ws(99)
+        if ws99:
+            for win in ws99:
+                new_ws = self._move_window(win)
+                win_upd_ws_output(win, new_ws, win.w_default_output)                  
+
+
 
 
     def move_left_right(self, binding_name: str, win: con.Con) -> None:

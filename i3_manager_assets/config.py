@@ -90,9 +90,9 @@ OUTPUTS = {
 # apps windows are usually bulky enough to want to use it
 # solely on the screen. But these apps can appear on the same
 # screen without banishing to the new ws. All floating windows
-# also don't get banished.They are taken into account though
-# if they already exist on the screen at the moment new window
-# is opened
+# also don't get banished. If a non banishing app has a ws
+# assigned, only one app goes there, the rest stay on the
+# screen where they are
 NON_BANISHING_APPS = [
     'xfce4-terminal',
     'mousepad'
@@ -123,6 +123,7 @@ class DefaultAssignment:
 
 # apps assignment, mostly for "go default" mode
 DEFAULT_ASSIGNMENT = [
+    DefaultAssignment('xfce4-terminal', ws=1),
     DefaultAssignment('discord', ws=2),
     DefaultAssignment('code', share_screen=False, ws=5),
     DefaultAssignment('firefox', ws=4), # firefox
