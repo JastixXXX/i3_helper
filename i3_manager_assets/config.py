@@ -68,7 +68,7 @@ COLORS = {
     'launch': '#EE21FB',
     'resize': '#F8FB21',
     'focus': '#00A8E1',
-    'ps2': '#8509e4',
+    'run_script': '#7a3582',
     'virt': '#00A8E1',
     'proxy': '#22e417',
 }
@@ -77,11 +77,11 @@ COLORS = {
 # binding some workspaces to actual screens by their outputs
 # we could parse it from the config, but more simple to add them here
 OUTPUTS = {
-    'DP-0': {
-        'ws': [1, 2, 3],
-        'capacity': 1
-    },
     'HDMI-0': {
+        'ws': [1, 2, 3],
+        'capacity': 2
+    },
+    'DP-0': {
         'ws': [4, 5, 6, 10],
         'capacity': 2
     }
@@ -130,7 +130,7 @@ DEFAULT_ASSIGNMENT = [
     DefaultAssignment('steam', ws=6),
     DefaultAssignment('obs', output=list(OUTPUTS.keys())[0]),
     DefaultAssignment('mpv', share_screen=False, output=list(OUTPUTS.keys())[0]),
-    DefaultAssignment('virt-manager', output=list(OUTPUTS.keys())[0]),
+    DefaultAssignment('virt-manager', share_screen=False, output=list(OUTPUTS.keys())[0]),
     DefaultAssignment('keepassxc', output=list(OUTPUTS.keys())[0]),
     DefaultAssignment('teamspeak', ws=2),
     DefaultAssignment('obsidian', output=list(OUTPUTS.keys())[0]),
@@ -158,10 +158,30 @@ EXCHANGE_SCREENS = ('DP-0', 'HDMI-0')
 # in 'move_to_left' and 'move_to_right'. These are actually
 # just tags, can be more of them
 LEFT_RIGHT = {
-    'move_to_left': 'DP-0',
-    'move_to_right': 'HDMI-0'
+    'move_to_left': 'HDMI-0',
+    'move_to_right': 'DP-0'
 }
 
-# Non steam games, which also require picom to turn off.
-# For the steam games there are already checks 
-GAMES = []
+# there are several notification daemons. To properly manage
+# notification windows, the window class is required
+NOTIFICATION_CLASS = 'xfce4-notifyd'
+
+# # it doesn't make sense to get vsync for all games
+# # it doesn't require the game to be in steam
+# GAMES_VSYNC = ['planetside2']
+
+# # scripts starting and stopping vsync mode
+# VSYNC_START = """
+#     nvidia-settings --assign CurrentMetaMode="\
+#     DP-0: 2560x1440_59.95 +1920+0 {AllowGSYNCCompatible=On}, \
+#     HDMI-0: 1920x1080_60 +0+360"
+#     nvidia-settings --assign ShowVRRVisualIndicator=1
+#     xrandr --output HDMI-0 --off
+# """
+# VSYNC_STOP = """
+#     xrandr --output HDMI-0 --auto
+#     nvidia-settings --assign ShowVRRVisualIndicator=0
+#     nvidia-settings --assign CurrentMetaMode="\
+#     DP-0: 2560x1440_59.95 +1920+0 {AllowGSYNCCompatible=Off}, \
+#     HDMI-0: 1920x1080_60 +0+360"
+# """

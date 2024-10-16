@@ -1,10 +1,10 @@
 import subprocess
 import os
-from .config import BACKUPS, PS2_DIR, GAMES
+from .config import BACKUPS, PS2_DIR
 from datetime import datetime
 from glob import glob
 from time import sleep
-from i3ipc import con
+# from i3ipc import con
 from threading import Timer, Event
 
 
@@ -223,25 +223,6 @@ def fix_particles() -> None:
     check_strings(f'{PS2_DIR}UserOptions.ini', {'ParticleLOD': '0'})
 
 
-def get_the_game_name(container: con.Con) -> str | None:
-    """Checks if a given container has the name attribute at all,
-    and if it has, then checks if it's a steam game and if
-    it's in GAMES, returns the GAMES item"""
-
-    # quite common that there are no non steam games
-    if not GAMES:
-        return
-    # if there is no name or it's not a steam app, break
-    if hasattr(container, 'name'):
-        game_name = str(container.name)
-    else:
-        return
-    # Check if this app is in the list
-    for game in GAMES:
-        if game in game_name:
-            return game
-        
-
 # ======================= misc ==========================
 def sendmessage(title: str, message: str='', timeout: str='0') -> None:
     """Sends a message to notification daemon in a separate process.
@@ -264,7 +245,7 @@ def process_searcher(proc_name: str) -> bool:
 def process_killer(proc_name: str) -> None:
     """Tries to gently kill a process for three times, then tries
     to terminate it if no success"""
-
+    print('kill process')
     try:
         for _ in range(3):
             # gentle kills a user owned process
@@ -305,6 +286,7 @@ class PicomManager:
             timer_active (Event): a threading safe boolean, which
                     plays a role of a flag that timer did the job
         """
+        print('kill picom')
         def task(timer_active: Event) -> None:
             """timer's task. Kills picom if finds it. Clears
             the event, flagging the timer task as done
