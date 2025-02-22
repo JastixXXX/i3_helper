@@ -76,6 +76,8 @@ def make_backup(app_cls: str) -> str:
         if os.path.isdir(os.path.join(BACKUPS[app_cls].backup_dir, dir)) and dir.isdigit():
             # turn it into int, we'll be comparing with int further
             backup_dir_content.append(dir)
+    # for some reason a list comes as a mess
+    backup_dir_content.sort()
     # get the newest mtime of the source location and check if backup not needed
     newest_mtime = str(get_newest_mtime(BACKUPS[app_cls].source_location))
     if newest_mtime in backup_dir_content:
@@ -85,7 +87,7 @@ def make_backup(app_cls: str) -> str:
     if len(os.listdir(BACKUPS[app_cls].source_location)) == 0:
         return (f'The backup source {BACKUPS[app_cls].source_location} '
                 'is an empty dir, backup is not required')
-    # now when we fihured out that a backup is required
+    # now when we figured out that a backup is required
     # four things should be done:
     # 1. maybe only gdrive backup is required, backup_amount = 0
     # for local backup:
@@ -99,12 +101,12 @@ def make_backup(app_cls: str) -> str:
         return f'Invalid backup amount. It should be 0(for endless backups) or more'
     # look for today directory on the backup dir
     # it should have timestamp in the name older than today beginning
-    today_beginning = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
-    today_dir = None
-    for dir in backup_dir_content:
-        if int(dir) > today_beginning:
-            today_dir = dir
-            break
+    today_beginning = str(int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()))
+    # today dir sits either on top of the list backup_dir_content or doesn't exist
+    if len(backup_dir_content) and backup_dir_content[-1] > today_beginning:
+        today_dir = backup_dir_content[-1]
+    else:
+        today_dir = None
     # source_files_path = os.path.join(BACKUPS[app_cls].source_location, '*')
     source_files = glob(os.path.join(BACKUPS[app_cls].source_location, '*'))
     full_backup_path = os.path.join(BACKUPS[app_cls].backup_dir, newest_mtime)
@@ -129,8 +131,6 @@ def make_backup(app_cls: str) -> str:
         return_message += f'Created new local today backup of <b>{app_cls}</b>'
         # add newly created dir
         backup_dir_content.append(newest_mtime)
-        # sort by names which are dates, reverse to get newest first
-        backup_dir_content.sort()
         # if we created a folder, probably we have to remove redundant dirs:
         # if we want only 3 or less backups, just simply remove others
         # and we already know that backup_amount is positive
@@ -147,7 +147,7 @@ def make_backup(app_cls: str) -> str:
             # and add the threshold
             oldest = int(backup_dir_content[0]) + int(BACKUPS[app_cls].old_backup_interval.total_seconds())
             # add the one we start the count from
-            dirs_to_leave = [backup_dir_content[0]]
+            allowed_dirs_to_leave = [backup_dir_content[0]]
             # remove 3 every day backups and the oldest one from the beginning
             backup_dir_content = backup_dir_content[1:-3]
             dirs_to_remove = []
@@ -159,16 +159,16 @@ def make_backup(app_cls: str) -> str:
                 else:
                     # get new threshold
                     oldest = int(dir) + int(BACKUPS[app_cls].old_backup_interval.total_seconds())
-                    dirs_to_leave.append(dir)
+                    allowed_dirs_to_leave.append(dir)
             # if we got more backups than required
             if (BACKUPS[app_cls].backup_amount != 0 and
-                len(dirs_to_leave) > (BACKUPS[app_cls].backup_amount) - 3):
-                dirs_to_remove += dirs_to_leave[:len(dirs_to_leave) + 3 - BACKUPS[app_cls].backup_amount]
+                len(allowed_dirs_to_leave) > (BACKUPS[app_cls].backup_amount) - 3):
+                dirs_to_remove += allowed_dirs_to_leave[:len(allowed_dirs_to_leave) + 3 - BACKUPS[app_cls].backup_amount]
             # remove the unnecessary dirs
             if dirs_to_remove:
                 remove_dirs_from_tail(dirs_to_remove, 0)
-        # on this point it's established that a backup is required and the
-        # local one is created. Let's check the necessity of gdrive backup
+    # on this point it's established that a backup is required and the
+    # local one is created. Let's check the necessity of gdrive backup
     if not BACKUPS[app_cls].sync_gdrive:
         return return_message
     if BACKUPS[app_cls].gdrive_args is None:
@@ -245,7 +245,6 @@ def process_searcher(proc_name: str) -> bool:
 def process_killer(proc_name: str) -> None:
     """Tries to gently kill a process for three times, then tries
     to terminate it if no success"""
-    print('kill process')
     try:
         for _ in range(3):
             # gentle kills a user owned process
@@ -286,7 +285,6 @@ class PicomManager:
             timer_active (Event): a threading safe boolean, which
                     plays a role of a flag that timer did the job
         """
-        print('kill picom')
         def task(timer_active: Event) -> None:
             """timer's task. Kills picom if finds it. Clears
             the event, flagging the timer task as done

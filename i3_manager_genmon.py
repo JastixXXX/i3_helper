@@ -259,6 +259,8 @@ def on_window_focus(i3, e) -> None:
     # to get the correct layout of a container, we have to take it from it's parent
     # the reason isn't really obvious. Unless it's a workspace
     focused = i3.get_tree().find_focused()
+    if focused.window_class is None:
+        return
     # this is the only way to intercept Steam from appearing over game
     if STEAM_GAMES and focused.window_class.lower() == 'steam':
         windows_account.hide_steam(STEAM_GAMES, e.container)

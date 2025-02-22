@@ -56,8 +56,9 @@ BACKUPS = {
     'obsidian': Backup(
         source_location=expanduser('~/Documents/ObsidianVault/'),
         backup_dir='/mnt/kllisre/Backups/Obsidian/',
-        sync_gdrive=True,
-        gdrive_args=['ObsidianVault', '--sync-direction', 'mirror', '--ignore', 'path=.obsidian,type=all_files']
+        backup_amount=20
+        # sync_gdrive=True,
+        # gdrive_args=['ObsidianVault', '--sync-direction', 'mirror', '--ignore', 'path=.obsidian,type=all_files']
     )
 }
 
@@ -79,7 +80,7 @@ COLORS = {
 OUTPUTS = {
     'HDMI-0': {
         'ws': [1, 2, 3],
-        'capacity': 2
+        'capacity': 1
     },
     'DP-0': {
         'ws': [4, 5, 6, 10],

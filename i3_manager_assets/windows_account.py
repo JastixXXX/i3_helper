@@ -108,6 +108,14 @@ class WindowsAccount:
                 return new_ws
             else:
                 new_win_con.command(f'move container to workspace {ws}; workspace {ws}')
+                # if ws is given then we should check if moving from the scratchpad
+                # if so, toggle floating mode to deattach from the scratchpad
+                if win.w_current_output == '__i3':
+                    # it's floating
+                    if win.w_floating in ['auto_on', 'user_on']:
+                        new_win_con.command('floating disable; floating enable')
+                    else:
+                        new_win_con.command('floating enable; floating disable')
                
    
     def _get_tracked_windows_by_id(self, w_id: int) -> App|None:
@@ -208,9 +216,9 @@ class WindowsAccount:
             return
         # if window and still exists, we can grab it's workspace
         # but we won't rewrite data if it was moved to the scratchpad
-        if app.w_current_ws != -1:
-            app.w_current_ws = win_con.workspace().num
-            app.w_current_output = win_con.ipc_data['output']
+        # if app.w_current_ws != -1:
+        app.w_current_ws = win_con.workspace().num
+        app.w_current_output = win_con.ipc_data['output']
 
 
     def _check_window_should_be_moved(self, app: App, ws: int=0, output: str|None=None) -> bool:
@@ -252,7 +260,7 @@ class WindowsAccount:
             print(f'{num}. id: {win.w_id} | class: {win.w_cls} | default ws: '
                   f'{win.w_default_ws} | current ws: {win.w_current_ws} | '
                   f'default output: {win.w_default_output} | current output: {win.w_current_output}'
-                  f' | sharing: {win.w_sharing} | parent id: {win.w_parent_id}')
+                  f' | sharing: {win.w_sharing} | parent id: {win.w_parent_id} | floating: {win.w_floating}')
 
 
     def init_windows(self) -> None: # checked
@@ -354,27 +362,7 @@ class WindowsAccount:
         def win_upd_ws_output(win: WindowsAccount.App, ws: int, output: str) -> None:
             """Updates attributes"""
             setattr(win, 'w_current_ws', ws)
-            setattr(win, 'w_current_output', output)
-
-        # def find_win_to_fill_gap(
-        #         wins: list[WindowsAccount.App],
-        #         start_ws: int,
-        #         stop_ws: int,
-        #         output: str,
-        #         vacant_ws_wins: int,
-        #         ws_to_output: dict,
-        #         wins_to_move: list[WindowsAccount.App]
-        #     ) -> WindowsAccount.App|None:
-        #     """Finds a proper window to fill a gap in the sequence
-        #     """
-        #     # just in a case ws 99, which we use as a tmp during
-        #     # windows exchange, is still active
-        #     if stop_ws > 30:
-        #         stop_ws = 30
-        #     for num in range(stop_ws, start_ws + 1, -1):
-        #         pass
-
-        
+            setattr(win, 'w_current_output', output)       
         # we should get what ws is where. Some are predefined
         # in the config, but not all of them
         # map ws to the output name
@@ -620,9 +608,10 @@ class WindowsAccount:
         for win in steam_in_scr:
             steam_app = self._get_tracked_windows_by_id(win.id)
             steam_ws = self._get_tracked_windows_of_ws(steam_app.w_current_ws)
-            # if no more games on steam ws, show steam
+            # if no more games on steam ws, show steam on it's default ws
             if not any([ game in steam_ws for game in games_ids ]):
-                self._move_window(steam_app, ws=steam_app.w_current_ws)
+                self._move_window(steam_app, ws=steam_app.w_default_ws)
+                
             # if there are games still open, not point to continue
             else:
                 return
