@@ -171,7 +171,7 @@ def on_mode_change(i3, e) -> None:
             rewrite_all_binding_modes()
             # split mode name ('Launch [f]irefox [c]hrome') to the mode name and it's bindings (if any)
             # so we can show it in notification with a title and a list of options
-            sendmessage(BINDING_MODE, '[' + '\n['.join(new_mode[1:]))
+            sendmessage(BINDING_MODE, '[' + '\n['.join(new_mode[1:]), urgency='critical')
 
 
 def on_window_new(i3, e) -> None:
@@ -280,7 +280,7 @@ def on_binding_change(i3, e) -> None:
                 sendmessage('Go default', 'Applications were brought to their assigned workspaces', '2700')
             case 'open_mpv':
                 mpv = subprocess.Popen(['mpv', paste()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                sendmessage('mpv from clipboard', f'mpv was opened with pid {mpv.pid}')
+                sendmessage('mpv from clipboard', f'mpv was opened with pid {mpv.pid}', urgency='critical')
             case 'exchange_screens':
                 # search for wisible workspaces, save their ids
                 visible_ws = []
@@ -340,4 +340,4 @@ i3.on(Event.WINDOW_MOVE, on_window_move)
 try:
     i3.main()
 except Exception as e:
-    sendmessage('ERROR', str(e))
+    sendmessage('ERROR', str(e), urgency='critical')

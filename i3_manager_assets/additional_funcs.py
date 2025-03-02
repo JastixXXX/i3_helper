@@ -224,14 +224,15 @@ def fix_particles() -> None:
 
 
 # ======================= misc ==========================
-def sendmessage(title: str, message: str='', timeout: str='0') -> None:
+def sendmessage(title: str, message: str='', timeout: str='10000', urgency: str='normal') -> None:
     """Sends a message to notification daemon in a separate process.
     urgency=critical makes a message stay until closed manually,
-    for other message types types don't forget timeout"""
+    for other message types types don't forget timeout, default
+    timeout is set to 10 seconds"""
 
     # uses i3 icon for the message
     icon = '/usr/share/doc/i3/logo-30.png'
-    subprocess.Popen(['notify-send', '-i', icon, '-t', timeout, title, message])
+    subprocess.Popen(['notify-send', '-i', icon, '-t', timeout, '-u', urgency, title, message])
 
 def process_searcher(proc_name: str) -> bool:
     """Searches the process by name, returns True if found"""        

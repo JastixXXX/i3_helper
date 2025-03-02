@@ -34,7 +34,7 @@ class Backup:
         source_location: str,
         backup_dir: str,
         backup_amount: int = 4,
-        old_backup_interval: timedelta = timedelta(weeks=2),
+        old_backup_interval: timedelta = timedelta(weeks=1),
         sync_gdrive: bool = False,
         gdrive_args: list|None = None        
     ) -> None:
@@ -56,7 +56,7 @@ BACKUPS = {
     'obsidian': Backup(
         source_location=expanduser('~/Documents/ObsidianVault/'),
         backup_dir='/mnt/kllisre/Backups/Obsidian/',
-        backup_amount=20
+        backup_amount=50
         # sync_gdrive=True,
         # gdrive_args=['ObsidianVault', '--sync-direction', 'mirror', '--ignore', 'path=.obsidian,type=all_files']
     )
