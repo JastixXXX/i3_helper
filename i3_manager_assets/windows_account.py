@@ -169,8 +169,9 @@ class WindowsAccount:
     def _get_window(self, window: con.Con, parent_id: int|None = None) -> App|None:
         """Creates a class for windows accounting from a container data"""
         w_container = self._get_new_container(window.id)
-        # if window quickly despawned, w_container will be None
-        if w_container is None:
+        # if window quickly despawned, w_container will be None,
+        # also, seems like xfce panel has no ws num, exclude it too
+        if w_container is None or w_container.workspace() is None:
             return
         # create an App with parametersh which exist for sure
         app = self.App(
