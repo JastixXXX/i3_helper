@@ -85,8 +85,10 @@ class OneScreen:
 ####################### initialization ############################
 
 # Create the Connection object that can be used to send commands and subscribe
-# to events.
-i3 = Connection()
+# to events. If i3 is launched as a systemd unit, Connection() without parameters
+# won't work. Find the socket
+socket_path =str(subprocess.check_output(["i3", "--get-socketpath"]).decode().strip())
+i3 = Connection(socket_path)
 # to be sure all windows are ready
 sleep(4)
 picom_manager = PicomManager(timer_delay=5)
