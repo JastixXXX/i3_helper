@@ -53,6 +53,8 @@ class OneScreen:
         # splith or splitv, the inner i3ipc value. Required, so we can
         # check, if any changes happened and don't rewrite a file
         self.inner_split_type = None
+        # take the proper genmon name from settings
+        self.genmon = GENMON_OUTPUT_MAPPING[name]
 
     @property
     def split_type(self) -> str | None:
@@ -77,20 +79,38 @@ class OneScreen:
         self.inner_split_type = value                
 
     def write_state(self) -> None:
-        """Forms a colorized string and writes it to a file"""
+        """Forms a colorized string and writes it to a file,
+        calls the refresh command on a proper genmon"""
         with open(self.name, 'w+') as f:
             color = COLORS.get(BINDING_MODE, '#E34234')
             f.write(f'<txt><span foreground="{color}"> {BINDING_MODE}</span> | {self.split_type} | {self.active_ws} </txt>')
+        # regresh the genmon, the process result and output isn't interesting
+        subprocess.Popen(
+            ['xfce4-panel', f'--plugin-event={self.genmon}:refresh:bool:true'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
 
 ####################### initialization ############################
 
 # Create the Connection object that can be used to send commands and subscribe
-# to events. If i3 is launched as a systemd unit, Connection() without parameters
-# won't work. Find the socket
-socket_path =str(subprocess.check_output(["i3", "--get-socketpath"]).decode().strip())
+# to events. Connection() without parameters may not work sometimes. Find the socket
+# for the robustness. Also give i3 some time to get up in a case the script is
+# called not from i3 config, but, for example, as a systemd unit
+# do 10 attempts to get the socket
+socket_path = ''
+for _ in range(10):
+    try:
+        socket_path = str(subprocess.check_output(["i3", "--get-socketpath"]).decode().strip())
+        # we got the socket, no need to wait anymore
+        break
+    # if i3 is not running yet, subprocess.CalledProcessError will return non-zero exit code
+    except subprocess.CalledProcessError:
+        sleep(1)
+# if i3 didn't open it's socket within 10 seconds
+if not socket_path:
+    exit(1)
 i3 = Connection(socket_path)
-# to be sure all windows are ready
-sleep(4)
 picom_manager = PicomManager(timer_delay=5)
 windows_account = WindowsAccount(i3)
 windows_account.init_windows()

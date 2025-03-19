@@ -127,6 +127,7 @@ DEFAULT_ASSIGNMENT = [
     DefaultAssignment('xfce4-terminal', ws=1),
     DefaultAssignment('discord', ws=2),
     DefaultAssignment('code', share_screen=False, ws=5),
+    DefaultAssignment('gimp-2.10', share_screen=False),
     DefaultAssignment('firefox', ws=4), # firefox
     DefaultAssignment('steam', ws=6),
     DefaultAssignment('obs', output=list(OUTPUTS.keys())[0]),
@@ -167,6 +168,12 @@ LEFT_RIGHT = {
 # notification windows, the window class is required
 NOTIFICATION_CLASS = 'xfce4-notifyd'
 
+# to update exact xfce4-genmons, map their names and 
+# screen tags
+GENMON_OUTPUT_MAPPING = {
+    'HDMI-0': 'genmon-26',
+    'DP-0': 'genmon-22'
+}
 # # it doesn't make sense to get vsync for all games
 # # it doesn't require the game to be in steam
 # GAMES_VSYNC = ['planetside2']
