@@ -1,6 +1,6 @@
 import subprocess
 import os
-from .config import BACKUPS, PS2_DIR
+from .config import BACKUPS, PS2_DIR, PICOM_SERVICE_NAME
 from datetime import datetime
 from glob import glob
 from time import sleep
@@ -273,28 +273,36 @@ class PicomManager:
     picom_starter_event = Event()
     picom_killer_event = Event()
 
-    def __init__(self, timer_delay: int) -> None:
+    def __init__(self, timer_delay: int=5) -> None:
         # delay for a timer
         self.timer_delay = timer_delay
 
     def postponed_picom_killer(self) -> None:
-        """Waits 5 seconds, giving an opportunity to a game to
+        """Waits n seconds, giving an opportunity to a game to
         open and close all temporary windows. Then kills picom
-        if wasn't explicitly stopped
+        if it wasn't explicitly stopped
 
         Args:
             timer_active (Event): a threading safe boolean, which
                     plays a role of a flag that timer did the job
         """
         def task(timer_active: Event) -> None:
-            """timer's task. Kills picom if finds it. Clears
-            the event, flagging the timer task as done
+            """timer's task. Kills picom if finds it if picom is
+            set to run just as a process or stops the systemd
+            service. Clears the event, flagging the timer task
+            as done
 
             Args:
-                timer_active (Event): _description_
+                timer_active (Event): thread safe flag entity,
+                        timer activity flag
             """
             timer_active.clear()
-            if process_searcher('picom'):
+            # a systemd service, call the stop at the background (popen nature)
+            # nothing will happen if it's not running
+            if PICOM_SERVICE_NAME:
+                subprocess.Popen(['systemctl', '--user', 'stop', PICOM_SERVICE_NAME])
+            # a normal process, kill if exists
+            elif process_searcher('picom'):
                 process_killer('picom')
         
         # if game appeared but the timer to bring picom
@@ -311,7 +319,7 @@ class PicomManager:
         self.picom_killer.start()
     
     def postponed_picom_starter(self) -> None:
-        """Waits 5 seconds, giving an opportunity to a game to
+        """Waits n seconds, giving an opportunity to a game to
         open and close all temporary windows. Then starts picom
         if wasn't explicitly stopped
 
@@ -321,14 +329,21 @@ class PicomManager:
                     plays a role of a flag that timer did the job
         """   
         def task(timer_active: Event) -> None:
-            """timer's task. Starts picom if doesnt find it.
+            """timer's task. Starts picom if doesnt find it if picom is
+            set to run as a process or starts the systemd service.
             Clears the event, flagging the timer task as done
 
             Args:
-                timer_active (Event): _description_
+                timer_active (Event): thread safe flag entity,
+                        timer activity flag
             """
             timer_active.clear()
-            if not process_searcher('picom'):
+            # a systemd service, call the stop at the background (popen nature)
+            # nothing will happen if it's not running
+            if PICOM_SERVICE_NAME:
+                subprocess.Popen(['systemctl', '--user', 'start', PICOM_SERVICE_NAME])
+            # a normal process, launch if doesn't exist
+            elif not process_searcher('picom'):
                 subprocess.Popen(['picom', '-b'])
 
         # if game desappeared but the timer to stop picom

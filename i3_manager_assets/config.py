@@ -174,6 +174,11 @@ GENMON_OUTPUT_MAPPING = {
     'HDMI-0': 'genmon-26',
     'DP-0': 'genmon-22'
 }
+
+# picom can be launched just as a process or as a systemd
+# --user service. If it's launched as a service, put here
+# it's name, otherwise left an empty string ''
+PICOM_SERVICE_NAME = 'picom.service'
 # # it doesn't make sense to get vsync for all games
 # # it doesn't require the game to be in steam
 # GAMES_VSYNC = ['planetside2']
