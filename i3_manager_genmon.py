@@ -8,7 +8,7 @@ from pyperclip import paste
 from i3ipc import Connection, Event, con
 from i3_manager_assets.windows_account import WindowsAccount
 from i3_manager_assets.additional_funcs import (
-    make_backup, fix_particles, sendmessage, PicomManager
+    make_backup, fix_particles, sendmessage, CompositorManager
 )
 from i3_manager_assets.config import *
 from time import sleep
@@ -111,7 +111,7 @@ for _ in range(10):
 if not socket_path:
     exit(1)
 i3 = Connection(socket_path)
-picom_manager = PicomManager(timer_delay=5)
+picom_manager = CompositorManager(timer_delay=5)
 windows_account = WindowsAccount(i3)
 windows_account.init_windows()
 
@@ -209,7 +209,7 @@ def on_window_new(i3, e) -> None:
     if 'steam_app_' in e.container.window_class:
         STEAM_GAMES.append(e.container.id)
         # kill picom. The function will decide if it\s necessary
-        picom_manager.postponed_picom_killer()
+        picom_manager.postponed_compositor_killer()
         return
     # grab only notifications and only if it's expected when NOTIFICATION_CON is ''
     if NOTIFICATION_CON == '' and e.container.window_class.lower() == NOTIFICATION_CLASS:
@@ -271,7 +271,7 @@ def on_window_close(i3, e) -> None:
             # try to show steam
             windows_account.show_steam(STEAM_GAMES)
             # start picom. The function will decide if it\s necessary
-            picom_manager.postponed_picom_starter()
+            picom_manager.postponed_compositor_starter()
 
 
 def on_window_focus(i3, e) -> None:

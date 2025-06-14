@@ -1,6 +1,11 @@
 import subprocess
 import os
-from .config import BACKUPS, PS2_DIR, PICOM_SERVICE_NAME
+from .config import (
+    BACKUPS, PS2_DIR, COMPOSITOR_PROCESS_NAME,
+    COMPOSITOR_SERVICE_NAME, COMPOSITOR_LAUNCH,
+    REDSHIFT_SERVICE_NAME, REDSHIFT_PROCESS_NAME,
+    REDSHIFT_LAUNCH
+)
 from datetime import datetime
 from glob import glob
 from time import sleep
@@ -261,64 +266,98 @@ def process_killer(proc_name: str) -> None:
     except subprocess.CalledProcessError:
         pass
 
-class PicomManager:
+class CompositorManager:
     """This class keeps track of the timers, designated
     to start or kill picom. Stops the timer, if it's not
     required anymore.
     """
     # for timers references
-    picom_starter = None
-    picom_killer = None
+    compositor_starter = None
+    compositor_killer = None
     # timers state - ticking if set
-    picom_starter_event = Event()
-    picom_killer_event = Event()
+    compositor_starter_event = Event()
+    compositor_killer_event = Event()
 
-    def __init__(self, timer_delay: int=5) -> None:
+    def __init__(self, timer_delay: int=5, off_redshift: bool=True) -> None:
         # delay for a timer
         self.timer_delay = timer_delay
+        # is it necessary of not to turn off redshift as well.
+        # redshift doesn't lowed the performance, so there
+        # is not strict necessity
+        self.off_redshift = off_redshift
 
-    def postponed_picom_killer(self) -> None:
+    # these four staticmethods are nice to have outside
+    # of this class too for manual compositor and
+    # redshift management
+    @staticmethod
+    def kill_service_or_process(
+        service_name: str, process_name: str
+    ) -> None:
+        # a systemd service, call the stop at the background (popen nature)
+        # nothing will happen if it's not running
+        if service_name:
+            subprocess.Popen(['systemctl', '--user', 'stop', service_name])
+        # a normal process, kill if exists
+        elif process_name and process_searcher(process_name):
+            process_killer(process_name)   
+
+    @staticmethod
+    def start_service_or_process(
+        service_name: str, process_name: str, process_options: list|None
+    ) -> None:
+        # a systemd service, call the stop at the background (popen nature)
+        # nothing will happen if it's not running
+        if service_name:
+            subprocess.Popen(['systemctl', '--user', 'start', service_name])
+        # a normal process, launch if doesn't exist
+        elif (process_name and process_options is not None and
+              not process_searcher(process_name)):
+            subprocess.Popen(process_options)
+
+
+    def postponed_compositor_killer(self) -> None:
         """Waits n seconds, giving an opportunity to a game to
-        open and close all temporary windows. Then kills picom
-        if it wasn't explicitly stopped
+        open and close all temporary windows (some games do this).
+        Then kills compositor. This task can be explicitly stopped.
 
         Args:
             timer_active (Event): a threading safe boolean, which
                     plays a role of a flag that timer did the job
         """
         def task(timer_active: Event) -> None:
-            """timer's task. Kills picom if finds it if picom is
-            set to run just as a process or stops the systemd
-            service. Clears the event, flagging the timer task
-            as done
+            """timer's task. Kills compositor if finds it's
+            process or stops the systemd service. Clears the
+            event, flagging the timer task as done.
 
             Args:
                 timer_active (Event): thread safe flag entity,
                         timer activity flag
             """
             timer_active.clear()
-            # a systemd service, call the stop at the background (popen nature)
-            # nothing will happen if it's not running
-            if PICOM_SERVICE_NAME:
-                subprocess.Popen(['systemctl', '--user', 'stop', PICOM_SERVICE_NAME])
-            # a normal process, kill if exists
-            elif process_searcher('picom'):
-                process_killer('picom')
+            self.kill_service_or_process(
+                COMPOSITOR_SERVICE_NAME,
+                COMPOSITOR_PROCESS_NAME
+            )
+            if self.off_redshift:
+                self.kill_service_or_process(
+                    REDSHIFT_SERVICE_NAME,
+                    REDSHIFT_PROCESS_NAME
+                )                
         
-        # if game appeared but the timer to bring picom
+        # if game appeared but the timer to bring compositor
         # is set - stop this timer and clear it's event
-        if self.picom_starter_event.is_set():
-            self.picom_starter.cancel()
-            self.picom_starter_event.clear()
+        if self.compositor_starter_event.is_set() and self.compositor_starter is not None:
+            self.compositor_starter.cancel()
+            self.compositor_starter_event.clear()
         # if killer is already assigned - stop
-        if self.picom_killer_event.is_set():
+        if self.compositor_killer_event.is_set():
             return
         # create and start the new timer, set it's event
-        self.picom_killer_event.set()
-        self.picom_killer = Timer(self.timer_delay, task, args=(self.picom_killer_event,))
-        self.picom_killer.start()
+        self.compositor_killer_event.set()
+        self.compositor_killer = Timer(self.timer_delay, task, args=(self.compositor_killer_event,))
+        self.compositor_killer.start()
     
-    def postponed_picom_starter(self) -> None:
+    def postponed_compositor_starter(self) -> None:
         """Waits n seconds, giving an opportunity to a game to
         open and close all temporary windows. Then starts picom
         if wasn't explicitly stopped
@@ -338,24 +377,28 @@ class PicomManager:
                         timer activity flag
             """
             timer_active.clear()
-            # a systemd service, call the stop at the background (popen nature)
-            # nothing will happen if it's not running
-            if PICOM_SERVICE_NAME:
-                subprocess.Popen(['systemctl', '--user', 'start', PICOM_SERVICE_NAME])
-            # a normal process, launch if doesn't exist
-            elif not process_searcher('picom'):
-                subprocess.Popen(['picom', '-b'])
+            self.start_service_or_process(
+                COMPOSITOR_SERVICE_NAME,
+                COMPOSITOR_PROCESS_NAME,
+                COMPOSITOR_LAUNCH
+            )
+            if self.off_redshift:
+                self.start_service_or_process(
+                    REDSHIFT_SERVICE_NAME,
+                    REDSHIFT_PROCESS_NAME,
+                    REDSHIFT_LAUNCH
+                )                
 
         # if game desappeared but the timer to stop picom
         # is set - stop this timer and clear it's event
-        if self.picom_killer_event.is_set():
-            self.picom_killer.cancel()
-            self.picom_killer_event.clear()
+        if self.compositor_killer_event.is_set() and self.compositor_killer is not None:
+            self.compositor_killer.cancel()
+            self.compositor_killer_event.clear()
         # if starter is already assigned - stop
-        if self.picom_starter_event.is_set():
+        if self.compositor_starter_event.is_set():
             return
         # create and start the new timer, set it's event
-        self.picom_starter_event.set()
-        self.picom_starter = Timer(4, task, args=(self.picom_starter_event,))
-        self.picom_starter.start()
+        self.compositor_starter_event.set()
+        self.compositor_starter = Timer(4, task, args=(self.compositor_starter_event,))
+        self.compositor_starter.start()
         return

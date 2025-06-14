@@ -72,6 +72,7 @@ COLORS = {
     'run_script': '#7a3582',
     'virt': '#00A8E1',
     'proxy': '#22e417',
+    'warp_zapret': '#92ef8e'
 }
 
 # =============== ws assignment ===============
@@ -124,12 +125,10 @@ class DefaultAssignment:
 
 # apps assignment, mostly for "go default" mode
 DEFAULT_ASSIGNMENT = [
-    DefaultAssignment('xfce4-terminal', ws=1),
     DefaultAssignment('discord', ws=2),
     DefaultAssignment('code', share_screen=False, ws=5),
-    DefaultAssignment('gimp-2.10', share_screen=False),
     DefaultAssignment('firefox', ws=4), # firefox
-    DefaultAssignment('steam', ws=6),
+    DefaultAssignment('steam', ws=10),
     DefaultAssignment('obs', output=list(OUTPUTS.keys())[0]),
     DefaultAssignment('mpv', share_screen=False, output=list(OUTPUTS.keys())[0]),
     DefaultAssignment('virt-manager', share_screen=False, output=list(OUTPUTS.keys())[0]),
@@ -175,10 +174,22 @@ GENMON_OUTPUT_MAPPING = {
     'DP-0': 'genmon-22'
 }
 
-# picom can be launched just as a process or as a systemd
+# Compositor can be launched just as a process or as a systemd
 # --user service. If it's launched as a service, put here
-# it's name, otherwise left an empty string ''
-PICOM_SERVICE_NAME = 'picom.service'
+# it's name, like 'picom.service', otherwise left an empty string ''
+COMPOSITOR_SERVICE_NAME = 'picom.service'
+# if launched as a process, put it's name and launch sequence,
+# which has programe name and launch options
+COMPOSITOR_PROCESS_NAME = 'picom'
+COMPOSITOR_LAUNCH = ['/usr/bin/picom', '-b']
+
+# redshift service name if used as a service. Otherwise
+# an attempt to send USR1 signal to the redshift process
+# will be executed
+REDSHIFT_SERVICE_NAME = 'redshift.service'
+REDSHIFT_PROCESS_NAME = 'redshift-gtk'
+REDSHIFT_LAUNCH = ['/usr/bin/redshift-gtk']
+
 # # it doesn't make sense to get vsync for all games
 # # it doesn't require the game to be in steam
 # GAMES_VSYNC = ['planetside2']
