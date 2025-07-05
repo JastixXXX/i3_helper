@@ -27,7 +27,7 @@ def make_backup(app_cls: str) -> str:
         """Returns mtime of a newest file in a given path,
         rounded to int, ignoring dotfiles/dotdirs"""
         max_mtime = 0
-        # recursivly walk the directory
+        # recursively walk the directory
         for root, _, files in os.walk(source_path):
             # ignore dotfiles/dotdirs
             if not '/.' in root:
@@ -70,13 +70,13 @@ def make_backup(app_cls: str) -> str:
     os.makedirs(BACKUPS[app_cls].backup_dir, exist_ok=True)
     # in the backup destination path should be n directories, named by timestamps
     # when the backup was done. But in one day only one backup directory getting
-    # overwriten. Thus, first we need to get the backup directory content and
+    # overwritten. Thus, first we need to get the backup directory content and
     # analyze  names there
     backup_dir_content = []
     # get backup dir content
     for dir in os.listdir(BACKUPS[app_cls].backup_dir):
         # dirs names are timestamps, so the name string should be digit
-        # just in case there is something else in teh flder, filter
+        # just in case there is something else in the folder, filter
         # it at least to some extent
         if os.path.isdir(os.path.join(BACKUPS[app_cls].backup_dir, dir)) and dir.isdigit():
             # turn it into int, we'll be comparing with int further
@@ -180,7 +180,7 @@ def make_backup(app_cls: str) -> str:
         return (f'The argument "gdrive_args" for an app {app_cls} should not'
                 ' be None if sync_gdrive is True')
     # we also need to temporarily switch the working directory because the
-    # gdrive sync script has some files in it's root direcory to work with
+    # gdrive sync script has some files in it's root directory to work with
     current_dir = os.getcwd()
     os.chdir(os.path.dirname(BACKUPS[app_cls].gdrive_script_path))
     subprocess.run([
@@ -196,7 +196,7 @@ def make_backup(app_cls: str) -> str:
 # ======================= games =========================
 def fix_particles() -> None:
     """Checks exactly one setting - ParticleLOD,
-    fixes if necessary. This behaviour is required every time,
+    fixes if necessary. This behavior is required every time,
     the game is launched or closed"""
 
     def check_strings(file_path: str, proper_strings: dict) -> None:
@@ -234,20 +234,18 @@ def sendmessage(title: str, message: str='', timeout: str='10000', urgency: str=
     urgency=critical makes a message stay until closed manually,
     for other message types types don't forget timeout, default
     timeout is set to 10 seconds"""
-
     # uses i3 icon for the message
     icon = '/usr/share/doc/i3/logo-30.png'
     subprocess.Popen(['notify-send', '-i', icon, '-t', timeout, '-u', urgency, title, message])
 
 def process_searcher(proc_name: str) -> bool:
     """Searches the process by name, returns True if found"""        
-
     try:
-        subprocess.check_output(['pgrep', '-U', str(os.getuid()), proc_name])
+        subprocess.run(['pgrep', '-U', str(os.getuid()), proc_name],  check=True)
         return True
     except subprocess.CalledProcessError:
         return False
-
+    
 def process_killer(proc_name: str) -> None:
     """Tries to gently kill a process for three times, then tries
     to terminate it if no success"""
@@ -265,6 +263,31 @@ def process_killer(proc_name: str) -> None:
                 subprocess.Popen(['pkill', '-9', '-U', str(os.getuid()), proc_name])    
     except subprocess.CalledProcessError:
         pass
+
+def pid_searcher(proc_name: str) -> str|None:
+    """Searches the given process name among all processes,
+    return it's PID if found or None if no process with such
+    name
+    """
+    try:
+        return subprocess.run(
+            ['pgrep', '-U', str(os.getuid()), proc_name],
+            text=True,
+            capture_output=True,
+            check=True
+        ).stdout.strip()
+    except subprocess.CalledProcessError:
+        return None
+    
+def find_window_by_pid(pid: str) -> int|None:
+    """Searches window id by process PID. Process has it's window
+    id in it's variables, so the function parses them
+    """
+    with open(f'/proc/{pid}/environ', 'r') as f:
+        for var in f.read().split('\0'):
+            var_name, var_val = var.split('=')
+            if var_name == 'WINDOWID':
+                return int(var_val)
 
 class CompositorManager:
     """This class keeps track of the timers, designated
@@ -368,7 +391,7 @@ class CompositorManager:
                     plays a role of a flag that timer did the job
         """   
         def task(timer_active: Event) -> None:
-            """timer's task. Starts picom if doesnt find it if picom is
+            """timer's task. Starts picom if doesn't find it if picom is
             set to run as a process or starts the systemd service.
             Clears the event, flagging the timer task as done
 

@@ -31,8 +31,8 @@ SCREENS = {}
 # remove it if this happened
 STEAM_GAMES = []
 # since there is no way to distinguish a new window parent, then we
-# have to assumme that if a new window and focused window have the
-# same class, wery likely the focused window is the parent
+# have to assume that if a new window and focused window have the
+# same class, very likely the focused window is the parent
 # of that new window. So we are gonna store it's id
 FOCUSED = 0
                     
@@ -83,8 +83,8 @@ class OneScreen:
         calls the refresh command on a proper genmon"""
         with open(self.name, 'w+') as f:
             color = COLORS.get(BINDING_MODE, '#E34234')
-            f.write(f'<txt><span foreground="{color}"> {BINDING_MODE}</span> | {self.split_type} | {self.active_ws} </txt>')
-        # regresh the genmon, the process result and output isn't interesting
+            f.write(f'<txt><span foreground="{color}"> {BINDING_MODE}</span> ⬩ {self.split_type} ⬩ {self.active_ws} </txt>')
+        # refresh the genmon, the process result and output isn't interesting
         subprocess.Popen(
             ['xfce4-panel', f'--plugin-event={self.genmon}:refresh:bool:true'],
             stdout=subprocess.DEVNULL,
@@ -118,7 +118,7 @@ windows_account.init_windows()
 def get_screens() -> None:
     """Gets the information about the initial state of workspaces, like
     active workspaces and their layouts"""
-    # Basicly returns an item for each connected screen and xroot in addition
+    # Basically returns an item for each connected screen and xroot in addition
     for screen in i3.get_outputs():
         # we need only physical screens
         if 'xroot' not in screen.name:
@@ -148,7 +148,7 @@ def close_old_notification() -> None:
     global NOTIFICATION_CON
     if isinstance(NOTIFICATION_CON, con.Con):
         NOTIFICATION_CON.command('kill')
-    # set to defaul
+    # set to default
     NOTIFICATION_CON = None
 
 
@@ -180,7 +180,7 @@ def on_mode_change(i3, e) -> None:
     match len(new_mode):
         # this shouldn't happen, but if it happened then better to know about it
         case 0:
-            sendmessage('Binding mode без названия', 'Не красиво', timeout='2700')
+            sendmessage('Binding mode without name', 'It is not good', timeout='2700')
         # default, resize - one word modes
         case 1:
             BINDING_MODE = new_mode[0]
@@ -208,7 +208,7 @@ def on_window_new(i3, e) -> None:
     # if there is a steam game, save it's id
     if 'steam_app_' in e.container.window_class:
         STEAM_GAMES.append(e.container.id)
-        # kill picom. The function will decide if it\s necessary
+        # kill picom. The function will decide if it's necessary
         picom_manager.postponed_compositor_killer()
         return
     # grab only notifications and only if it's expected when NOTIFICATION_CON is ''
@@ -219,15 +219,15 @@ def on_window_new(i3, e) -> None:
     if (app_class := e.container.window_class.lower()) in BACKUPS.keys():
         FOR_BACKUP.append(app_class)
         return
-    # # if mpv is opened, switch to it's ws
-    # if e.container.window_class == 'mpv':
-    #     # get all mps windows
-    #     mpv = windows_account.get_tracked_windows_by_class('mpv')
-    #     for win in mpv:
-    #         # swicth to the ws, containing one, which was opened in this event
-    #         if win.w_id == e.container.id:
-    #             i3.command(f'workspace {win.w_current_ws}')
-    #     return
+    # if mpv is opened, switch to it's ws
+    if e.container.window_class == 'mpv':
+        # get all mps windows
+        mpv = windows_account._get_tracked_windows_by_class('mpv')
+        for win in mpv:
+            # switch to the ws, containing one, which was opened in this event
+            if win.w_id == e.container.id:
+                i3.command(f'workspace {win.w_current_ws}')
+        return
 
 
 def on_workspace_focus(i3, e) -> None:
@@ -255,7 +255,7 @@ def on_window_close(i3, e) -> None:
         # closing window is in there
         if (app_class := e.container.window_class.lower()) in FOR_BACKUP:
             FOR_BACKUP.remove(app_class)
-            # it shoud be the last window, thus shouldn't be in this list
+            # it should be the last window, thus shouldn't be in this list
             if app_class in FOR_BACKUP:
                 return
             sendmessage('Backup results', make_backup(app_class), '4000')
@@ -304,7 +304,7 @@ def on_binding_change(i3, e) -> None:
                 mpv = subprocess.Popen(['mpv', paste()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 sendmessage('mpv from clipboard', f'mpv was opened with pid {mpv.pid}', urgency='critical')
             case 'exchange_screens':
-                # search for wisible workspaces, save their ids
+                # search for visible workspaces, save their ids
                 visible_ws = []
                 for ws in i3.get_workspaces():
                     if ws.visible and ws.output in EXCHANGE_SCREENS:
@@ -314,7 +314,7 @@ def on_binding_change(i3, e) -> None:
                 ws_cons = []
                 for ws_id in visible_ws:
                     # if any of these workspaces are named - return
-                    # we don't workwith such
+                    # we don't work with such
                     if (ws_con := i3.get_tree().find_by_id(ws_id)).num == -1:
                         return
                     ws_cons.append(ws_con)

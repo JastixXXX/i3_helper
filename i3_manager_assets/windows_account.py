@@ -1,10 +1,11 @@
+from time import sleep
 from i3ipc import Connection, con
+
 from i3_manager_assets.config import (
     OUTPUTS, DEFAULT_ASSIGNMENT, NON_BANISHING_APPS,
-    LEFT_RIGHT
+    LEFT_RIGHT, XRAY_WS
 )
-from time import sleep
-
+from .additional_funcs import pid_searcher, find_window_by_pid
 
 class WindowsAccount:
 # A class to store information about the majority of applications (their windows)
@@ -12,7 +13,7 @@ class WindowsAccount:
 # or put applications with default assignment to workspaces to make "go default" work
     class App:
         """A class to store information about one window.
-        if duplicateds the info from default assignment,
+        it duplicates the info from default assignment,
         but shouldn't have too much of impact to the
         performance
 
@@ -20,7 +21,7 @@ class WindowsAccount:
             w_cls: class name of it
             w_current_ws: the ws where window is currently located
             w_default_ws: the assigned ws for this window if set
-            w_sharing: False if an app doesn't want otehr apps to
+            w_sharing: False if an app doesn't want other apps to
                     be opened on the same screen
             w_default_output: the output where window assigned to be
             w_current_output: the output where the windows is now
@@ -33,6 +34,7 @@ class WindowsAccount:
         def __init__(
             self,
             w_id: int,
+            w_window: int,
             w_cls: str,
             w_current_ws: int,
             w_floating: str,
@@ -43,6 +45,7 @@ class WindowsAccount:
             w_parent_id: int|None = None
         ) -> None:
             self.w_id = w_id
+            self.w_window = w_window
             self.w_cls = w_cls.lower()
             self.w_default_ws = w_default_ws
             self.w_current_ws = w_current_ws
@@ -66,6 +69,10 @@ class WindowsAccount:
                     continue
                 ws_windows.append(win)
         return ws_windows
+
+    def _get_tracked_windows_by_class(self, class_name: str) -> list:
+        """Returns all tracked windows of a given class"""
+        return [ win for win in self.windows if win.w_cls == class_name ]
 
 
     def _get_new_container(self, w_id: int) -> con.Con | None:
@@ -105,6 +112,9 @@ class WindowsAccount:
                     f'move workspace to output {output if output is not None else win.w_current_output}; '
                     f'layout {new_win_con.parent.layout}'
                 )
+                # for the proper switch to the new opened window we have to refresh the
+                # ws data right here (and it will be double refreshed later again)
+                self._update_ws(win.w_id)
                 return new_ws
             else:
                 new_win_con.command(f'move container to workspace {ws}; workspace {ws}')
@@ -173,10 +183,11 @@ class WindowsAccount:
         # also, seems like xfce panel has no ws num, exclude it too
         if w_container is None or w_container.workspace() is None:
             return
-        # create an App with parametersh which exist for sure
+        # create an App with parameters which exist for sure
         app = self.App(
             w_cls=w_container.window_class,
             w_id=w_container.id,
+            w_window=w_container.window,
             w_current_ws=w_container.workspace().num if w_container.workspace().num != -1 else w_container.workspace().name,
             w_floating=w_container.floating,
             w_current_output=w_container.ipc_data['output'],
@@ -225,7 +236,7 @@ class WindowsAccount:
     def _check_window_should_be_moved(self, app: App, ws: int=0, output: str|None=None) -> bool:
         """Checks if an app should be moved from the ws
         where it was placed by default. If ws is given then
-        output shuld be given too, it checks if app can be
+        output should be given too, it checks if app can be
         placed to this ws. If all these aren't given, takes
         info from app
         """
@@ -241,7 +252,7 @@ class WindowsAccount:
         if not ws_windows:
             return False
         # if new app or any of other apps don't want to share
-        # the screen at all, then new app shoould be moved
+        # the screen at all, then new app should be moved
         if not app.w_sharing or not all([ other.w_sharing for other in ws_windows ]):
             return True
         # now we can check if new app fits into the screen capacity
@@ -254,11 +265,19 @@ class WindowsAccount:
         return True
 
 
+    def _get_xray_window_id(self) -> int|None:
+        """Searches xray window id
+        """
+        xray_pid = pid_searcher('xray')
+        if xray_pid is not None:
+            return find_window_by_pid(xray_pid)
+
+
     def _print_windows(self, func_name: str = '') -> None:
         """for debug purposes"""
         print(f'------------{func_name}-------------')
         for num, win in enumerate(self.windows):
-            print(f'{num}. id: {win.w_id} | class: {win.w_cls} | default ws: '
+            print(f'{num}. id: {win.w_id} | window {win.w_id} | class: {win.w_cls} | default ws: '
                   f'{win.w_default_ws} | current ws: {win.w_current_ws} | '
                   f'default output: {win.w_default_output} | current output: {win.w_current_output}'
                   f' | sharing: {win.w_sharing} | parent id: {win.w_parent_id} | floating: {win.w_floating}')
@@ -288,16 +307,29 @@ class WindowsAccount:
         if new_window is None:
             return
         self.windows.append(new_window)
-        # if window was quickly despawned, new_window will be none
+        # xray is a special case. It also requires some time to launch, otherwise
+        # we can't distinguish what kind of terminal is getting opened
+        sleep(0.1)
+        xray_win_id = self._get_xray_window_id()
+        if new_window.w_window == xray_win_id:
+            # it has special ws
+            new_window.w_default_ws = XRAY_WS
+        # xray is also a special case for parenting. If any terminal is selected,
+        # it can be considered as a parent for xray terminal which isn't correct
+        else:
+            # get parent id, assuming a parent exists and it's the previously
+            # focused window. Also get this prev focused window by it's given id
+            parent = self._get_tracked_windows_by_id(focused)
+            # move a new window to it's parent, if it's not already there and
+            # ofc if their classes are the same. Parent also can be ws without a class.
+            # This is necessary for dialog windows, so check if out found "parent" is
+            # the same window which we are processing
+            if (parent is not None and
+                parent.w_cls == new_window.w_cls and
+                parent.w_id != new_window.w_id):
+                new_window.w_parent_id = focused
         if new_window.w_cls in NON_BANISHING_APPS:
             return
-        # get parent id, assuming a parent exists and it's the previously
-        # focused window. Also get this prev focused window by it's given id
-        parent = self._get_tracked_windows_by_id(focused)
-        # move a new window to it's parent, if it's not already there and
-        # ofc if their classes are the same. Parent also can be ws withot a class
-        if parent is not None and parent.w_cls == new_window.w_cls:
-            new_window.w_parent_id = focused
         # if a new window was spawned by an existing one -
         # move new one on it's ws, unless the presumable
         # parent is already closed
@@ -313,7 +345,7 @@ class WindowsAccount:
         # nothing has to be done further
         if new_window.w_floating in ['auto_on', 'user_on']:
             return
-        # we should banich window if the ws is full in it's output
+        # we should banish window if the ws is full in it's output
         # capacity, or if new window or existing on this ws windows
         # dont' allow each other
         if self._check_window_should_be_moved(new_window):
@@ -360,10 +392,14 @@ class WindowsAccount:
         """Reassigns accounted windows to their default workspaces
         and outputs. Doesn't solve conflicts because it will require
         very heavy logic"""
+
         def win_upd_ws_output(win: WindowsAccount.App, ws: int, output: str) -> None:
             """Updates attributes"""
             setattr(win, 'w_current_ws', ws)
-            setattr(win, 'w_current_output', output)       
+            setattr(win, 'w_current_output', output)
+
+        # xray lives in a terminal, if launched at all. Find it's id
+        xray_id = self._get_xray_window_id()
         # we should get what ws is where. Some are predefined
         # in the config, but not all of them
         # map ws to the output name
@@ -390,6 +426,10 @@ class WindowsAccount:
         for win in self.windows:
             if win.w_current_ws == 99:
                 continue
+            # process our special case - xray
+            if xray_id is not None and win.w_window == xray_id and win.w_current_ws != XRAY_WS:
+                self._move_window(win, ws=XRAY_WS)
+                continue
             if win.w_default_ws and win.w_current_ws != win.w_default_ws:
                 # if it's non banishing app, we don't move a window
                 # if a window of the same class is already there
@@ -400,7 +440,7 @@ class WindowsAccount:
                 self._move_window(win, ws=win.w_default_ws)
                 # update win props
                 win_upd_ws_output(win, win.w_default_ws, ws_to_out[win.w_default_ws])
-                # don't check the output setings, because ws has more priority
+                # don't check the output settings, because ws has more priority
                 continue
             # if ws isn't set but the output is and windows isn't there
             if (win.w_default_output is not None and
@@ -447,11 +487,11 @@ class WindowsAccount:
                 continue
             # filter all windows which aren't assigned to this ws
             all_other_wins = [ win for win in vacant_ws_wins if win not in assigned_wins ]
-            # get the capacity which remins after all asigned windows took their place
+            # get the capacity which remains after all assigned windows took their place
             capacity_remains = ws_to_cap.get(num, 1) - len(assigned_wins)
             if not all_other_wins:
                 continue
-            # if no more capacity remins, or there is a non sharing window
+            # if no more capacity remains, or there is a non sharing window
             if capacity_remains <= 0 or non_sharing_assigned:
                 # move all other windows
                 for win in all_other_wins:
@@ -536,7 +576,7 @@ class WindowsAccount:
         specification if the exact ws. If the moving container
         has the only non floating window, it will be placed
         according to all restrictions. If it's a pack of at
-        least two non floating windows, it will be plased on
+        least two non floating windows, it will be placed on
         the free ws.
 
         Args:

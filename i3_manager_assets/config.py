@@ -97,17 +97,17 @@ OUTPUTS = {
 # screen where they are
 NON_BANISHING_APPS = [
     'xfce4-terminal',
-    'mousepad'
+    # 'mousepad'
 ]
 
 @dataclass
 class DefaultAssignment:
-    """Describes one app behaviour.
+    """Describes one app behavior.
     Only for apps with special ws binding.
 
         name: app class in lower case
         share_screen: if an app wants to reside on the
-            screen alone, put False. True means otehr apps
+            screen alone, put False. True means other apps
             can be opened on the same screen if output
             capacity allows
         output: output name, if an app has no assigned ws
@@ -151,7 +151,7 @@ NOP_SHORTCUTS = {
     ('ctrl', 'Mod4', 'semicolon'): 'move_to_right',
 }
 
-# screen tags, which whindows will be exchanged with each
+# screen tags, which windows will be exchanged with each
 # other when 'exchange_screens' was used
 EXCHANGE_SCREENS = ('DP-0', 'HDMI-0')
 
@@ -179,7 +179,7 @@ GENMON_OUTPUT_MAPPING = {
 # it's name, like 'picom.service', otherwise left an empty string ''
 COMPOSITOR_SERVICE_NAME = 'picom.service'
 # if launched as a process, put it's name and launch sequence,
-# which has programe name and launch options
+# which has program name and launch options
 COMPOSITOR_PROCESS_NAME = 'picom'
 COMPOSITOR_LAUNCH = ['/usr/bin/picom', '-b']
 
@@ -189,6 +189,11 @@ COMPOSITOR_LAUNCH = ['/usr/bin/picom', '-b']
 REDSHIFT_SERVICE_NAME = 'redshift.service'
 REDSHIFT_PROCESS_NAME = 'redshift-gtk'
 REDSHIFT_LAUNCH = ['/usr/bin/redshift-gtk']
+
+# Special case - ws where xray proxy should sit. In my setup it
+# gets launched in a terminal emulator, we can't assign all
+# terminal windows to that ws
+XRAY_WS = 10
 
 # # it doesn't make sense to get vsync for all games
 # # it doesn't require the game to be in steam
