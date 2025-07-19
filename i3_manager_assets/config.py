@@ -49,11 +49,11 @@ class Backup:
 # apps names are only lowercase. Don't forget the app name in backup_dir
 # otherwise all backups of all apps will be messed up
 BACKUPS = {
-    'keepassxc': Backup(
+    '^keepassxc$': Backup(
         source_location=expanduser('~/Documents/Kee/'),
         backup_dir='/mnt/kllisre/Backups/Kee/'
     ),
-    'obsidian': Backup(
+    '^obsidian$': Backup(
         source_location=expanduser('~/Documents/ObsidianVault/'),
         backup_dir='/mnt/kllisre/Backups/Obsidian/',
         backup_amount=50
@@ -96,8 +96,8 @@ OUTPUTS = {
 # assigned, only one app goes there, the rest stay on the
 # screen where they are
 NON_BANISHING_APPS = [
-    'xfce4-terminal',
-    # 'mousepad'
+    '^xfce4-terminal$',
+    '^mousepad$'
 ]
 
 @dataclass
@@ -121,22 +121,24 @@ class DefaultAssignment:
     name: str
     share_screen: bool = True
     output: str|None = None
-    ws: int|None = None
+    # 0 ws doesn't exist, so we consider it as no value
+    ws: int = 0
 
 # apps assignment, mostly for "go default" mode
 DEFAULT_ASSIGNMENT = [
-    DefaultAssignment('discord', ws=2),
-    DefaultAssignment('code', share_screen=False, ws=5),
-    DefaultAssignment('firefox', ws=4), # firefox
-    DefaultAssignment('steam', ws=10),
-    DefaultAssignment('obs', output=list(OUTPUTS.keys())[0]),
-    DefaultAssignment('mpv', share_screen=False, output=list(OUTPUTS.keys())[0]),
-    DefaultAssignment('virt-manager', share_screen=False, output=list(OUTPUTS.keys())[0]),
-    DefaultAssignment('keepassxc', output=list(OUTPUTS.keys())[0]),
-    DefaultAssignment('teamspeak', ws=2),
-    DefaultAssignment('obsidian', output=list(OUTPUTS.keys())[0]),
-    DefaultAssignment('wireshark', output=list(OUTPUTS.keys())[0]),
-    DefaultAssignment('transmission-gtk', ws=10),
+    DefaultAssignment('^discord$', ws=2),
+    DefaultAssignment('^code$', share_screen=False, ws=5),
+    DefaultAssignment('^firefox$', ws=4),
+    DefaultAssignment('^steam$', ws=10),
+    DefaultAssignment('^obs$', output=list(OUTPUTS.keys())[0]),
+    DefaultAssignment('^mpv$', share_screen=False, output=list(OUTPUTS.keys())[0]),
+    DefaultAssignment('^virt-manager$', share_screen=False, output=list(OUTPUTS.keys())[0]),
+    DefaultAssignment('^keepassxc$', output=list(OUTPUTS.keys())[0]),
+    DefaultAssignment('^teamspeak$', ws=2),
+    DefaultAssignment('^obsidian$', output=list(OUTPUTS.keys())[0]),
+    DefaultAssignment('^wireshark$', output=list(OUTPUTS.keys())[0]),
+    DefaultAssignment('^transmission-gtk^', ws=10),
+    DefaultAssignment('^gimp$', share_screen=False, ws=10),
 ]
 
 # ini file for planetside2 to fix before the start
@@ -167,6 +169,9 @@ LEFT_RIGHT = {
 # notification windows, the window class is required
 NOTIFICATION_CLASS = 'xfce4-notifyd'
 
+# video player to use for opening urls from the clipboard
+VIDEOPLAYER = '^mpv$'
+
 # to update exact xfce4-genmons, map their names and 
 # screen tags
 GENMON_OUTPUT_MAPPING = {
@@ -194,6 +199,12 @@ REDSHIFT_LAUNCH = ['/usr/bin/redshift-gtk']
 # gets launched in a terminal emulator, we can't assign all
 # terminal windows to that ws
 XRAY_WS = 10
+
+# a list of regex patterns to distinguish games. Steam games
+# look like steam_app_12345
+GAMES = [
+        r'^steam_app_\d+',
+    ]
 
 # # it doesn't make sense to get vsync for all games
 # # it doesn't require the game to be in steam

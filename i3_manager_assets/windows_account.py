@@ -1,23 +1,32 @@
 from time import sleep
 from i3ipc import Connection, con
+from dataclasses import dataclass
+from re import fullmatch, IGNORECASE
 
 from i3_manager_assets.config import (
     OUTPUTS, DEFAULT_ASSIGNMENT, NON_BANISHING_APPS,
     LEFT_RIGHT, XRAY_WS
 )
-from .additional_funcs import pid_searcher, find_window_by_pid
+from .additional_funcs import (
+        pid_searcher, find_window_by_pid, get_client_pid_by_id,
+        CompositorManager, it_is_a_game
+    )
+
 
 class WindowsAccount:
 # A class to store information about the majority of applications (their windows)
 # Stores configured apps for the option to banish such windows to other workspaces
 # or put applications with default assignment to workspaces to make "go default" work
+    
+    @dataclass
     class App:
         """A class to store information about one window.
         it duplicates the info from default assignment,
         but shouldn't have too much of impact to the
         performance
 
-            w_id: an id of the exact window
+            w_con_id: an id of the exact window container
+            w_win_id: an id of window in the system, not in wm
             w_cls: class name of it
             w_current_ws: the ws where window is currently located
             w_default_ws: the assigned ws for this window if set
@@ -30,38 +39,33 @@ class WindowsAccount:
             w_floating: this state is taken into account when
                     searching new ws for a window
         """
+        w_con_id: int
+        w_win_id: int
+        w_cls: str
+        w_current_ws: int
+        w_floating: str
+        w_current_output: str
+        w_default_output: str|None = None
+        w_default_ws: int = 0
+        w_sharing: bool = True
+        w_parent_id: int|None = None
 
-        def __init__(
-            self,
-            w_id: int,
-            w_window: int,
-            w_cls: str,
-            w_current_ws: int,
-            w_floating: str,
-            w_default_ws: int = 0,
-            w_sharing: bool = True,
-            w_default_output: str|None = None,
-            w_current_output: str|None = None,
-            w_parent_id: int|None = None
-        ) -> None:
-            self.w_id = w_id
-            self.w_window = w_window
-            self.w_cls = w_cls.lower()
-            self.w_default_ws = w_default_ws
-            self.w_current_ws = w_current_ws
-            self.w_sharing = w_sharing
-            self.w_default_output = w_default_output
-            self.w_current_output = w_current_output
-            self.w_parent_id = w_parent_id
-            self.w_floating = w_floating
 
     def __init__(self, i3: Connection) -> None:
         self.windows = []
         self.i3 = i3
      
 
-    def _get_tracked_windows_of_ws(self, ws: int, skip_floating: bool=False) -> list:
-        """Returns all tracked windows of a given ws"""
+    def _get_tracked_windows_of_ws(self, ws: int, skip_floating: bool=False) -> list[App]:
+        """Returns all tracked windows of a given ws
+
+        Args:
+            ws (int): ws num
+            skip_floating (bool, optional): ignore floating windows
+
+        Returns:
+            list (App): list of windows
+        """
         ws_windows = []
         for win in self.windows:
             if win.w_current_ws == ws:
@@ -70,38 +74,61 @@ class WindowsAccount:
                 ws_windows.append(win)
         return ws_windows
 
-    def _get_tracked_windows_by_class(self, class_name: str) -> list:
-        """Returns all tracked windows of a given class"""
-        return [ win for win in self.windows if win.w_cls == class_name ]
+
+    def _get_tracked_windows_by_class(self, class_name: str) -> list[App]:
+        """Returns all tracked windows of a given class
+
+        Args:
+            class_name (str): class name of a window to look for,
+                    may be string or regex pattern
+
+        Returns:
+            list (App): list of windows
+        """
+        return [ win for win in self.windows if fullmatch(class_name, win.w_cls, IGNORECASE) is not None ]
 
 
-    def _get_new_container(self, w_id: int) -> con.Con | None:
+    def _get_new_container(self, w_con_id: int) -> con.Con | None:
         """The container, returned by the event handler,
         isn't integrated into a tree yet, thus stuff like
         parent or ws can be None, so it requires to find
-        this container again"""
-        new_con = self.i3.get_tree().find_by_id(w_id)
+        this container again
+
+        Args:
+            w_con_id (int): id of a container to look for
+
+        Returns:
+            con.Con | None: container object
+        """
+        new_con = self.i3.get_tree().find_by_id(w_con_id)
         if new_con is not None:
             return new_con
         # give it another try with a bit more time
         sleep(0.2)
-        return self.i3.get_tree().find_by_id(w_id)
+        return self.i3.get_tree().find_by_id(w_con_id)
 
 
     def _move_window(self, win: App, ws: int=0, output: str|None=None) -> None|int:
-        """Moves the given app to another ws. Finds
-        new ws or moves to a given one. If output is given,
-        searches a ws there. Ofc it makes no sense to
-        provide ws if output is given.
-        Returns new workspace, found for the window
+        """Moves the given app to another ws. Finds new ws
+        or moves to a given one.
+
+        Args:
+            win (App): window
+            ws (int, optional): ws where to move window to. Makes
+                    no sense to provide if output is given
+            output (str | None, optional): screen where to look
+                    for a new ws for the given window.
+
+        Returns:
+            None|int: new ws found for the given window
         """
         # find new window container just to grab the layout
         # just a window.command doesn't require it
-        new_win_con = self._get_new_container(win.w_id)
-        # some apps spwan and despawn windows, so a container can be None
+        new_win_con = self._get_new_container(win.w_con_id)
+        # some apps spawn and despawn windows, so a container can be None
         if new_win_con is None:
             # remove it from the accounting
-            self._remove_window_from_accounting(win.w_id)
+            self._remove_window_from_accounting(win.w_con_id)
         else:
             if not ws:
                 new_ws = self._search_new_ws_for_window(win, output)
@@ -114,12 +141,12 @@ class WindowsAccount:
                 )
                 # for the proper switch to the new opened window we have to refresh the
                 # ws data right here (and it will be double refreshed later again)
-                self._update_ws(win.w_id)
+                self._update_ws(win.w_con_id)
                 return new_ws
             else:
                 new_win_con.command(f'move container to workspace {ws}; workspace {ws}')
                 # if ws is given then we should check if moving from the scratchpad
-                # if so, toggle floating mode to deattach from the scratchpad
+                # if so, toggle floating mode to detach from the scratchpad
                 if win.w_current_output == '__i3':
                     # it's floating
                     if win.w_floating in ['auto_on', 'user_on']:
@@ -128,10 +155,21 @@ class WindowsAccount:
                         new_win_con.command('floating enable; floating disable')
                
    
-    def _get_tracked_windows_by_id(self, w_id: int) -> App|None:
-        """Searches a window with some id among already opened windows"""
+    def _get_tracked_window_by_con_id(self, w_con_id: int) -> App|None:
+        """Searches a window with given container id among
+        already opened windows
+        """
         for win in self.windows:
-            if win.w_id == w_id:
+            if win.w_con_id == w_con_id:
+                return win
+
+
+    def _get_tracked_window_by_win_id(self, w_win_id: int) -> App|None:
+        """Searches a window with given window id among
+        already opened windows
+        """
+        for win in self.windows:
+            if win.w_win_id == w_win_id:
                 return win
 
 
@@ -146,12 +184,16 @@ class WindowsAccount:
         Sidenote - named workspaces have no ws.num, they have "-1".
         All of them. So we should either add named workspaces to the list
         of workspaces we are gonna check for new window placement, or
-        totally ignore them. We are gonna ignore."""
-        # # if a window has parent, it should always go to his parent
-        # if app.w_parent_id is not None:
-        #     for win in self.windows:
-        #         if win.w_id == app.w_parent_id:
-        #             return win.w_current_ws
+        totally ignore them. We are gonna ignore.
+
+        Args:
+            app (App): window
+            output (str | None, optional): force the screen where window
+                    should be placed
+
+        Returns:
+            int: new ws num
+        """
         if output is None:
             output = app.w_default_output or app.w_current_output
         ws_on_other_screens = []
@@ -169,85 +211,107 @@ class WindowsAccount:
             # if ws is empty - it's the result, which means it's
             if not ws:
                 return num
-            # if ws isn't empty, we should check, if can place
-            # this app there
-            if self._check_window_should_be_moved(app, ws=num, output=output):
+            # if ws isn't empty, we should check, if can place this app there
+            if not self._check_window_can_be_placed_to_ws(app, ws=num, output=output):
                 continue
             return num
+        # unlikely we won't find a proper ws, but to prevent errors
+        # we are gonna return ws 99 as a backup
+        return 99
             
 
     def _get_window(self, window: con.Con, parent_id: int|None = None) -> App|None:
-        """Creates a class for windows accounting from a container data"""
+        """Creates a class for windows accounting from a container data
+
+        Args:
+            window (con.Con): window in it's container
+            parent_id (int | None, optional): if was detected that
+                    the given window has parent
+
+        Returns:
+            App|None: window on None if container stopped to exist
+        """
         w_container = self._get_new_container(window.id)
         # if window quickly despawned, w_container will be None,
         # also, seems like xfce panel has no ws num, exclude it too
-        if w_container is None or w_container.workspace() is None:
+        if (w_container is None or
+            w_container.workspace() is None or
+            w_container.window_class is None):
             return
         # create an App with parameters which exist for sure
         app = self.App(
+            w_con_id=w_container.id,
+            w_win_id=w_container.window,
             w_cls=w_container.window_class,
-            w_id=w_container.id,
-            w_window=w_container.window,
-            w_current_ws=w_container.workspace().num if w_container.workspace().num != -1 else w_container.workspace().name,
+            w_current_ws=w_container.workspace().num,
             w_floating=w_container.floating,
             w_current_output=w_container.ipc_data['output'],
-            w_parent_id=parent_id       
+            w_parent_id=parent_id     
         )
         # now check if there are special settings for this app
-        settings = None
         for def_ass in DEFAULT_ASSIGNMENT:
-            if def_ass.name == app.w_cls:
-                settings = def_ass
+            # found match, add settings data to fields
+            if fullmatch(def_ass.name, app.w_cls, IGNORECASE) is not None:
+                app.w_default_ws = def_ass.ws
+                app.w_default_output = def_ass.output
+                app.w_sharing = def_ass.share_screen                
                 break
-        if settings is None:
-            return app
-        app.w_default_ws =settings.ws
-        app.w_default_output = settings.output
-        app.w_sharing = settings.share_screen
         return app
 
 
-    def _remove_window_from_accounting(self, w_id: int) -> None:
+    def _remove_window_from_accounting(self, w_con_id: int) -> None:
         """Searches the windows by it's id and removes
-        it from the list self.windows"""
+        it from the list self.windows
+
+        Args:
+            w_con_id (int): window to remove
+        """
         for win in self.windows:
-            if win.w_id == w_id:
+            if win.w_con_id == w_con_id:
                 self.windows.remove(win)
                 return
 
 
-    def _update_ws(self, w_id: int) -> None:
-        """Refreshes a workspace of a window if it was moved.
+    def _update_ws(self, w_con_id: int) -> None:
+        """Refreshes data about ws of a window if it was moved.
         Requests a new container of a window in a case the
-        old one stopped to exist"""
-        win_con = self._get_new_container(w_id)
-        app = self._get_tracked_windows_by_id(w_id)
+        old one stopped to exist
+
+        Args:
+            w_con_id (int): window to refresh info about
+        """
+        win_con = self._get_new_container(w_con_id)
+        app = self._get_tracked_window_by_con_id(w_con_id)
+        # unlikely to happen, but if prev func can return None
+        # we should check if it didn't happen
+        if app is None:
+            return
         # if for some reason the container stopped to exist, it should be removed
         if win_con is None:
-            self._remove_window_from_accounting(app.w_id)
+            self._remove_window_from_accounting(app.w_con_id)
             return
-        # if window and still exists, we can grab it's workspace
-        # but we won't rewrite data if it was moved to the scratchpad
-        # if app.w_current_ws != -1:
+        # if window still exists, we can grab it's workspace
+        # but we won't rewrite data if it was moved to the scratchpad,
+        # which mean app keeps the old data about normal ws
         app.w_current_ws = win_con.workspace().num
         app.w_current_output = win_con.ipc_data['output']
 
 
-    def _check_window_should_be_moved(self, app: App, ws: int=0, output: str|None=None) -> bool:
+    def _check_window_should_be_moved(self, app: App) -> bool:
         """Checks if an app should be moved from the ws
-        where it was placed by default. If ws is given then
-        output should be given too, it checks if app can be
-        placed to this ws. If all these aren't given, takes
-        info from app
+        where it was placed by default.
+
+        Args:
+            app (App): window
+
+        Returns:
+            bool: verdict
         """
-        if ws:
-            ws_windows = self._get_tracked_windows_of_ws(ws, skip_floating=True)
-        else:
-            # get all apps sitting on the current ws
-            ws_windows = self._get_tracked_windows_of_ws(app.w_current_ws)
-            # remove our new app from the list because it was
-            # already placed there
-            ws_windows.remove(app)
+        # get all apps sitting on the current ws
+        ws_windows = self._get_tracked_windows_of_ws(app.w_current_ws)
+        # remove our new app from the list because it was
+        # already placed there
+        ws_windows.remove(app)
         # if ws is empty, then no point for further checks
         if not ws_windows:
             return False
@@ -256,13 +320,36 @@ class WindowsAccount:
         if not app.w_sharing or not all([ other.w_sharing for other in ws_windows ]):
             return True
         # now we can check if new app fits into the screen capacity
-        if ws:
-            if len(ws_windows) < OUTPUTS[output]['capacity']:
-                return False
-        else:
-            if len(ws_windows) < OUTPUTS[app.w_current_output]['capacity']:
-                return False
+        if len(ws_windows) < OUTPUTS[app.w_current_output]['capacity']:
+            return False
         return True
+
+
+    def _check_window_can_be_placed_to_ws(self, app: App, ws: int, output: str) -> bool:
+        """Checks if a window can be placed to the requested ws.
+
+        Args:
+            app (App): window
+            ws (int): ws where new window should be placed
+            output (str): screen where a window should be placed.
+                    required because they can have different
+                    capacities
+
+        Returns:
+            bool: verdict
+        """
+        ws_windows = self._get_tracked_windows_of_ws(ws, skip_floating=True)
+        # if ws is empty, then no point for further checks
+        if not ws_windows:
+            return True
+        # if new app or any of other apps don't want to share
+        # the screen at all, then new app should be moved
+        if not app.w_sharing or not all([ other.w_sharing for other in ws_windows ]):
+            return False
+        # now we can check if new app fits into the screen capacity
+        if len(ws_windows) < OUTPUTS[output]['capacity']:
+            return True
+        return False
 
 
     def _get_xray_window_id(self) -> int|None:
@@ -273,18 +360,48 @@ class WindowsAccount:
             return find_window_by_pid(xray_pid)
 
 
+    def _show_ws_with_windows(self) -> None:
+        """Checks if there are some windows on currently visible
+        workspaces. If no - looks for the first occupied ws on
+        the current outputs and switches to it
+        """
+        for ws in self.i3.get_workspaces():
+            if not ws.visible:
+                continue
+            # if there are windows on the visible ws, no need to
+            # do anything
+            if self._get_tracked_windows_of_ws(ws.num):
+                continue
+            # to not leave an empty screen, we take all occupied ws of the
+            # screen, and take the first one, sorted by the ws num
+            screen_wins = []
+            for window in self.windows:
+                if window.w_current_output == ws.output:
+                    screen_wins.append(window)
+            # if there are windows on the screen at all
+            if screen_wins:
+                screen_wins.sort(key=lambda item: item.w_current_ws)
+                self.i3.command(f'workspace {screen_wins[0].w_current_ws}')            
+
+
     def _print_windows(self, func_name: str = '') -> None:
-        """for debug purposes"""
+        """For debug purposes
+
+        Args:
+            func_name (str, optional): function name where is was called
+                    from, or some label
+        """
         print(f'------------{func_name}-------------')
         for num, win in enumerate(self.windows):
-            print(f'{num}. id: {win.w_id} | window {win.w_id} | class: {win.w_cls} | default ws: '
+            print(f'{num}. id: {win.w_con_id} | window {win.w_win_id} | class: {win.w_cls} | default ws: '
                   f'{win.w_default_ws} | current ws: {win.w_current_ws} | '
                   f'default output: {win.w_default_output} | current output: {win.w_current_output}'
                   f' | sharing: {win.w_sharing} | parent id: {win.w_parent_id} | floating: {win.w_floating}')
 
 
-    def init_windows(self) -> None: # checked
-        """Loops over all existing windows to store the windows of interest"""
+    def init_windows(self) -> None:
+        """Loops over all existing windows to store the windows of interest
+        """
         for win in self.i3.get_tree().leaves():
             # we don't track pseudocontainers
             if win.window_class is None:
@@ -292,11 +409,17 @@ class WindowsAccount:
             self.windows.append(self._get_window(win))
 
 
-    def window_opened(self, window: con.Con, focused: int) -> None: # checked
+    def window_opened(self, window: con.Con, focused: int) -> None:
         """Function for window open event. Stores the windows of interest,
         banishes the conflicting windows if one is opened or residing on
         a predefined ws of an opened window. Unless there are already
-        windows of the same class on the ws"""
+        windows of the same class on the ws
+
+        Args:
+            window (con.Con): the opening window
+            focused (int): container id of the currently focused
+                    window. Not the one is getting opened
+        """
         # if a pseudocontainer
         if window.window_class is None:
             return
@@ -307,28 +430,42 @@ class WindowsAccount:
         if new_window is None:
             return
         self.windows.append(new_window)
-        # xray is a special case. It also requires some time to launch, otherwise
+        # xray is a special case because it runs inside of a terminal
+        # window and terminal containing it should be moved to the predefined
+        # ws. Xray also requires some time to launch, otherwise
         # we can't distinguish what kind of terminal is getting opened
         sleep(0.1)
         xray_win_id = self._get_xray_window_id()
-        if new_window.w_window == xray_win_id:
-            # it has special ws
+        if new_window.w_win_id == xray_win_id:
+            # it has special ws despite terminal may be non banishing
             new_window.w_default_ws = XRAY_WS
-        # xray is also a special case for parenting. If any terminal is selected,
-        # it can be considered as a parent for xray terminal which isn't correct
+        # window can spawn two kind of windows - transient and actual child.
+        # we consider both as children and have to check for both.
+        parent = None
+        # 1. Check for transient because it's easy
+        if window.ipc_data['window_properties']['transient_for'] is not None:
+            parent = self._get_tracked_window_by_win_id(window.ipc_data['window_properties']['transient_for'])
+        # 2. Check if window has leader window. Often applications have
+        # invisible leader, acting like a daemon. In this case we are
+        # gonna assume that focused window is the parent. But if there
+        # is no leader, it's definitely not a child window of some app
         else:
-            # get parent id, assuming a parent exists and it's the previously
-            # focused window. Also get this prev focused window by it's given id
-            parent = self._get_tracked_windows_by_id(focused)
-            # move a new window to it's parent, if it's not already there and
-            # ofc if their classes are the same. Parent also can be ws without a class.
-            # This is necessary for dialog windows, so check if out found "parent" is
-            # the same window which we are processing
-            if (parent is not None and
-                parent.w_cls == new_window.w_cls and
-                parent.w_id != new_window.w_id):
-                new_window.w_parent_id = focused
-        if new_window.w_cls in NON_BANISHING_APPS:
+            leader_id = get_client_pid_by_id(new_window.w_win_id)
+            if leader_id is not None:
+                # first try direct search
+                parent = self._get_tracked_window_by_win_id(leader_id)
+                # if didn't find (likely), take focused if it has
+                # the same class
+                if parent is None:
+                    focused_accounted = self._get_tracked_window_by_con_id(focused)
+                    # if focused window is of different class, we consider
+                    # we didn't find the parent
+                    if focused_accounted is not None and focused_accounted.w_cls == new_window.w_cls:
+                        parent = focused_accounted
+        # move a new window to it's parent, if it's not already there
+        if parent is not None:
+            new_window.w_parent_id = parent.w_con_id
+        if any([ fullmatch(app, new_window.w_cls, IGNORECASE) for app in NON_BANISHING_APPS ]):
             return
         # if a new window was spawned by an existing one -
         # move new one on it's ws, unless the presumable
@@ -352,8 +489,12 @@ class WindowsAccount:
             self._move_window(new_window)
     
 
-    def window_closed(self, window: con.Con) -> None: # checked
-        """Removes windows from accounting if it was there"""
+    def window_closed(self, window: con.Con) -> None:
+        """Removes windows from accounting if it was there
+
+        Args:
+            window (con.Con): window which got closed
+        """
         # this window could be someone's parent, remove this
         # yes, parent can be closed before his children
         for win in self.windows:
@@ -362,11 +503,15 @@ class WindowsAccount:
         self._remove_window_from_accounting(window.id)
 
 
-    def window_moved(self, window: con.Con) -> None: # checked
-        """Refreshes the current ws of a window, if it's accounted"""
-        # weird this - if window is assigned in config to another ws
-        # if get's moved before! the open even happend on i3ipc
-        if self._get_tracked_windows_by_id(window.id) is None:
+    def window_moved(self, window: con.Con) -> None:
+        """Refreshes the current ws of a window, if it's accounted
+
+        Args:
+            window (con.Con): window which were moved
+        """
+        # weird thing - if window is assigned in config to another ws
+        # it get's moved before! the open even happened on i3ipc
+        if self._get_tracked_window_by_con_id(window.id) is None:
             return
         # i3 spawns pseudocontainers in some occasions, which can contain
         # several windows. In such case the window.window_class is None
@@ -379,9 +524,13 @@ class WindowsAccount:
                 self._update_ws(leaf.id)
 
 
-    def window_floating_changed(self, window: con.Con) -> None: # checked
-        """Changes floating state for tracked windows"""
-        win = self._get_tracked_windows_by_id(window.id)
+    def window_floating_changed(self, window: con.Con) -> None:
+        """Changes floating state for tracked windows
+
+        Args:
+            window (con.Con): target window
+        """
+        win = self._get_tracked_window_by_con_id(window.id)
         # if window is opened as floating, this event happens
         # before window opened, so beware
         if win is not None:
@@ -391,10 +540,17 @@ class WindowsAccount:
     def go_default(self) -> None:
         """Reassigns accounted windows to their default workspaces
         and outputs. Doesn't solve conflicts because it will require
-        very heavy logic"""
+        very heavy logic
+        """
 
         def win_upd_ws_output(win: WindowsAccount.App, ws: int, output: str) -> None:
-            """Updates attributes"""
+            """Updates attributes
+
+            Args:
+                win (WindowsAccount.App): window
+                ws (int): probably new ws
+                output (str): probably new output
+            """
             setattr(win, 'w_current_ws', ws)
             setattr(win, 'w_current_output', output)
 
@@ -427,13 +583,13 @@ class WindowsAccount:
             if win.w_current_ws == 99:
                 continue
             # process our special case - xray
-            if xray_id is not None and win.w_window == xray_id and win.w_current_ws != XRAY_WS:
+            if xray_id is not None and win.w_win_id == xray_id and win.w_current_ws != XRAY_WS:
                 self._move_window(win, ws=XRAY_WS)
                 continue
             if win.w_default_ws and win.w_current_ws != win.w_default_ws:
                 # if it's non banishing app, we don't move a window
                 # if a window of the same class is already there
-                if win.w_cls in NON_BANISHING_APPS:
+                if any([ fullmatch(app, win.w_cls, IGNORECASE) for app in NON_BANISHING_APPS ]):
                     target_ws_wins = self._get_tracked_windows_of_ws(win.w_default_ws)
                     if win.w_cls in [ other.w_cls for other in target_ws_wins ]:
                         continue
@@ -510,7 +666,7 @@ class WindowsAccount:
             for win in ws99:
                 # find where the parent is, take into account the possibility
                 # of possible errors when parent doesn't exist, it shouldn't happen though
-                parent = self._get_tracked_windows_by_id(win.w_parent_id)
+                parent = self._get_tracked_window_by_con_id(win.w_parent_id)
                 new_ws = self._move_window(win, parent.w_current_ws if parent is not None else 0)
                 if new_ws != parent.w_current_ws:
                     win_upd_ws_output(win, new_ws, win.w_default_output)
@@ -569,6 +725,9 @@ class WindowsAccount:
                         if new_win_ws >= win.w_current_ws:
                             continue
                         self._move_window(win, new_win_ws)
+        # to not leave an empty screen, call function to look for an
+        # occupied ws
+        self._show_ws_with_windows()
 
 
     def move_left_right(self, binding_name: str, win: con.Con) -> None:
@@ -581,6 +740,7 @@ class WindowsAccount:
 
         Args:
             binding_name (str): left, right
+            win (con.Con): target window
         """
         # get output name from the config
         output_name = LEFT_RIGHT.get(binding_name)
@@ -590,69 +750,90 @@ class WindowsAccount:
         # if it's a pseudocontainer
         if win.window_class is None:
             if len(win.leaves()) > 1:
-                pass
                 return
             win = win.nodes[0]
         # if it's a normal window or a pseudocontainer with one window
         # get this window stored and fake it's current output to
         # make function _search_new_ws_for_window look on another screen
-        app = self._get_tracked_windows_by_id(win.id)
+        app = self._get_tracked_window_by_con_id(win.id)
         # there is a possibility it's a mistake and window is already
         # on the proper output
         if app.w_current_output == output_name:
             return
+        # preserve the current output to switch to some windows later
+        old_output = app.w_current_output
+        old_ws = app.w_current_ws
         # when output is set, _move_window will look for a proper ws
         self._move_window(app, output=output_name)
-        # to not leave an empty screen, we take all occupied ws of the
-        # screen, and take the first one, sorted by the ws num, except
-        # one we are moving
-        screen_wins = []
-        for window in self.windows:
-            if window.w_current_output == app.w_current_output and window.w_id != app.w_id:
-                screen_wins.append(window)
-        # if there are windows on the screen at all
-        if screen_wins:
-            screen_wins.sort(key=lambda item: item.w_current_ws)
-            self.i3.command(f'workspace {screen_wins[0].w_current_ws}')
+        # if there are windows left on the ws where we moved windows
+        # from - return
+        if self._get_tracked_windows_of_ws(old_ws):
+            return
+        # to not leave an empty screen, call function to look for an
+        # occupied ws
+        self._show_ws_with_windows()
             
 
-
-    def hide_steam(self, games_ids: list, steam: con.Con) -> None:
+    def hide_steam(self, steam: con.Con) -> None:
         """moves steam to scratchpad if it was activated
         over a game window
 
         Args:
-            games_ids (list): a list of games ids, so we can
-                    see if a window is actually a game window
+            steam (con.Con): steam window
         """
-        steam_app = self._get_tracked_windows_by_id(steam.id)
-        steam_ws = self._get_tracked_windows_of_ws(steam_app.w_current_ws)
-        steam_ws_ids = [ app.w_id for app in steam_ws ]
-        # if game and steam share one ws
-        if any([ game in steam_ws_ids for game in games_ids ]):
-            steam.command('move scratchpad')
+        steam_win = self._get_tracked_window_by_con_id(steam.id)
+        steam_ws = self._get_tracked_windows_of_ws(steam_win.w_current_ws)
+        # if game and steam share one ws, hide steam
+        for win in steam_ws:
+            if it_is_a_game(win.w_cls):
+                steam.command('move scratchpad')
+                break
 
 
-    def show_steam(self, games_ids: list) -> None:
+    def show_steam(self) -> None:
         """Brings steam back to the last used ws if this
         ws has no games. And if steam is on the scratchpad
-
-        Args:
-            games_ids (list): a list of games ids, so we can
-                    see if a window is actually a game window
         """
+        # look for steam
+        steam = self._get_tracked_windows_by_class('^steam$')
+        if not steam:
+            return
         # look for steam on scratchpad
         steam_in_scr = self.i3.get_tree().scratchpad().find_classed('steam')
-        if not steam_in_scr:
-            return
-        # bring all windows if possible
-        for win in steam_in_scr:
-            steam_app = self._get_tracked_windows_by_id(win.id)
-            steam_ws = self._get_tracked_windows_of_ws(steam_app.w_current_ws)
-            # if no more games on steam ws, show steam on it's default ws
-            if not any([ game in steam_ws for game in games_ids ]):
-                self._move_window(steam_app, ws=steam_app.w_default_ws)
-                
-            # if there are games still open, not point to continue
-            else:
+        if steam_in_scr:
+            # bring in a normal ws all windows if possible
+            for win in steam_in_scr:
+                steam_win = self._get_tracked_window_by_con_id(win.id)
+                steam_ws = self._get_tracked_windows_of_ws(steam_win.w_current_ws)
+                # if no more games on steam ws, show steam on it's current ws
+                if not any([ it_is_a_game(game.w_cls) for game in steam_ws ]):
+                    self._move_window(steam_win, ws=steam_win.w_current_ws)    
+                # if there are games still open, not point to continue
+                else:
+                    return
+        # show steam on the screen
+        self.i3.command(f'workspace {steam[0].w_current_ws}')
+        
+
+    def start_eye_candy_services(self, compositor_manager: CompositorManager) -> None:
+        """Starts the services, like picom and redshift if
+        there are no games anymore.
+
+        Args:
+            compositor_manager (CompositorManager): initialized instance
+        """
+        # check if any game is still launched
+        for win in self.windows:
+            if it_is_a_game(win.w_cls):
                 return
+        # no games found, start the services
+        compositor_manager.postponed_compositor_starter()
+
+
+    def stop_eye_candy_services(self, compositor_manager: CompositorManager) -> None:
+        """Stops the services, like picom and redshift.
+
+        Args:
+            compositor_manager (CompositorManager): initialized instance
+        """
+        compositor_manager.postponed_compositor_killer()

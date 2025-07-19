@@ -4,38 +4,37 @@
 # notifications. Replaces same feature of i3 bar
 
 import subprocess
+from traceback import format_exc
 from pyperclip import paste
+from re import fullmatch, IGNORECASE
 from i3ipc import Connection, Event, con
 from i3_manager_assets.windows_account import WindowsAccount
 from i3_manager_assets.additional_funcs import (
-    make_backup, fix_particles, sendmessage, CompositorManager
+    make_backup, fix_particles, sendmessage,
+    CompositorManager, it_is_a_game
 )
-from i3_manager_assets.config import *
+from i3_manager_assets.config import (
+    BACKUPS, GENMON_OUTPUT_MAPPING, COLORS,
+    NOTIFICATION_CLASS, NOP_SHORTCUTS, EXCHANGE_SCREENS,
+    VIDEOPLAYER
+)
 from time import sleep
 
 
 #################### just shared variables ###################
 # Notification container
 NOTIFICATION_CON = None
-# A list of opened apps which require backup for their files
-FOR_BACKUP = []
 # A currently active binding mode. Assume that it's default because 
 # there is no way to request it, only listen to events
 BINDING_MODE = 'default'
-# All actuall screens. Supposed to hold references to OneScreen
+# All actual screens. Supposed to hold references to OneScreen
 SCREENS = {}
-# A list of games opened (yeah, makes no sense to open several games 
-# simultaneously, but it's possible). When empty we can cuf off
-# extra checks when working with scratchpad. Required to prevent
-# steam to show up on top of the game, because it's very hard to
-# remove it if this happened
-STEAM_GAMES = []
 # since there is no way to distinguish a new window parent, then we
 # have to assume that if a new window and focused window have the
 # same class, very likely the focused window is the parent
 # of that new window. So we are gonna store it's id
 FOCUSED = 0
-                    
+              
 # contains an information about a screen state for quick output
 class OneScreen:
     """This class is responsible for tracking the state
@@ -80,7 +79,8 @@ class OneScreen:
 
     def write_state(self) -> None:
         """Forms a colorized string and writes it to a file,
-        calls the refresh command on a proper genmon"""
+        calls the refresh command on a proper genmon
+        """
         with open(self.name, 'w+') as f:
             color = COLORS.get(BINDING_MODE, '#E34234')
             f.write(f'<txt><span foreground="{color}"> {BINDING_MODE}</span> ⬩ {self.split_type} ⬩ {self.active_ws} </txt>')
@@ -117,7 +117,8 @@ windows_account.init_windows()
 
 def get_screens() -> None:
     """Gets the information about the initial state of workspaces, like
-    active workspaces and their layouts"""
+    active workspaces and their layouts
+    """
     # Basically returns an item for each connected screen and xroot in addition
     for screen in i3.get_outputs():
         # we need only physical screens
@@ -136,14 +137,16 @@ def get_screens() -> None:
 ####################### helper functions ##############################
 
 def rewrite_all_binding_modes() -> None:
-    """Updates binding mode for all screens/files because the mode is global"""
+    """Updates binding mode for all screens/files because the mode is global
+    """
     for v in SCREENS.values():
         v.write_state()
 
 
 def close_old_notification() -> None:
     """Closes the current, binding mode related notification and
-    sets NOTIFICATION_CON to default"""
+    sets NOTIFICATION_CON to default
+    """
     # if NOTIFICATION_CON has a reference to a container - the notification has to be killed
     global NOTIFICATION_CON
     if isinstance(NOTIFICATION_CON, con.Con):
@@ -153,9 +156,9 @@ def close_old_notification() -> None:
 
 
 def update_binding_modes(focused: con.Con) -> None: # checked
-    """Updates the information about layout types.
-    Takes focused because this container is also used
-    in caller functions"""
+    """Updates the information about layout types. Takes focused
+    because this container is also used in caller functions
+    """
     if focused.type == 'workspace':
         layout = focused.layout
     else:
@@ -166,11 +169,11 @@ def update_binding_modes(focused: con.Con) -> None: # checked
         SCREENS[output].split_type = layout
         SCREENS[output].write_state()      
 
-
 ############################ event handlers #############################
 
 def on_mode_change(i3, e) -> None:
-    """Handler of mode change event"""
+    """Handler of mode change event
+    """
     global NOTIFICATION_CON, BINDING_MODE
     # close a notification from the previous binding mode if happened to be on
     close_old_notification()
@@ -199,39 +202,37 @@ def on_mode_change(i3, e) -> None:
 def on_window_new(i3, e) -> None:
     """Handler of opening new windows event, saves the container
     into a global variable, if the container belongs to notification daemon,
-    saves app class to FOR_BACKUP if the app requires a backup"""
+    saves app class to FOR_BACKUP if the app requires a backup
+    """
     global NOTIFICATION_CON
     # if it's not any window of interest
     if e.container.window_class is None:
         return
     windows_account.window_opened(e.container, FOCUSED)
-    # if there is a steam game, save it's id
-    if 'steam_app_' in e.container.window_class:
-        STEAM_GAMES.append(e.container.id)
+    # if there is some game - steam one or a native one,
+    # turn off picom and redshift
+    if it_is_a_game(e.container.window_class):
         # kill picom. The function will decide if it's necessary
-        picom_manager.postponed_compositor_killer()
+        windows_account.stop_eye_candy_services(picom_manager)
         return
     # grab only notifications and only if it's expected when NOTIFICATION_CON is ''
     if NOTIFICATION_CON == '' and e.container.window_class.lower() == NOTIFICATION_CLASS:
         NOTIFICATION_CON = e.container
         return
-    # store the app class name as a flag that there was an app opened, which needs a backup
-    if (app_class := e.container.window_class.lower()) in BACKUPS.keys():
-        FOR_BACKUP.append(app_class)
-        return
-    # if mpv is opened, switch to it's ws
-    if e.container.window_class == 'mpv':
-        # get all mps windows
-        mpv = windows_account._get_tracked_windows_by_class('mpv')
-        for win in mpv:
-            # switch to the ws, containing one, which was opened in this event
-            if win.w_id == e.container.id:
+    # if video player is opened, switch to it's ws
+    if fullmatch(VIDEOPLAYER, e.container.window_class, IGNORECASE):
+        # get all player windows
+        player = windows_account._get_tracked_windows_by_class(VIDEOPLAYER)
+        for win in player:
+            # switch to the ws, containing one, which was opened in this event.
+            if win.w_con_id == e.container.id:
                 i3.command(f'workspace {win.w_current_ws}')
         return
 
 
 def on_workspace_focus(i3, e) -> None:
-    """Changes the current workspace number for a screen"""
+    """Changes the current workspace number for a screen
+    """
     output = e.current.ipc_data['output']
     if SCREENS[output].active_ws != e.current.name:
         SCREENS[output].active_ws = e.current.name
@@ -241,42 +242,37 @@ def on_workspace_focus(i3, e) -> None:
 def on_window_close(i3, e) -> None:
     """Backups dir/files when the application, which needs it, is closed.
     Keeps three backups total, overwrites the oldest one. Also tracks
-    if a game was closed, it should be deleted from the list"""
-    global FOR_BACKUP
+    if a game was closed, it should be deleted from the list
+    """
     # not a window of interest
     if e.container.window_class is None:
         return
     windows_account.window_closed(e.container)
-    # if any of apps requiring backup is closing, there should be an item
-    # in FOR_BACKUP that one of such apps was opened. Also we react
-    # only to the last windows of such class
-    # not empty
-    if FOR_BACKUP:
-        # closing window is in there
-        if (app_class := e.container.window_class.lower()) in FOR_BACKUP:
-            FOR_BACKUP.remove(app_class)
-            # it should be the last window, thus shouldn't be in this list
-            if app_class in FOR_BACKUP:
-                return
-            sendmessage('Backup results', make_backup(app_class), '4000')
+    # check if the closing app requires backup. It also makes sense
+    # only if it's the last this app window
+    for app_name_pattern in BACKUPS.keys():
+        if fullmatch(app_name_pattern, e.container.window_class, IGNORECASE):
+            # look for other windows of this class, if non - make backup
+            if not windows_account._get_tracked_windows_by_class(app_name_pattern):
+                sendmessage('Backup results', make_backup(app_name_pattern), '4000')
+            return
     # check if a game is exited
-    if e.container.id in STEAM_GAMES:
-        STEAM_GAMES.remove(e.container.id)
+    if it_is_a_game(e.container.window_class):
         # fix particles in ini, if it's ps2
         if (hasattr(e.container, 'name') and e.container.name is not None and
             'planetside2' in e.container.name.lower()):
             fix_particles()
-        # remove steam from the scratchpad, if the last steam game exited
-        if not STEAM_GAMES:
-            # try to show steam
-            windows_account.show_steam(STEAM_GAMES)
-            # start picom. The function will decide if it\s necessary
-            picom_manager.postponed_compositor_starter()
+        # remove steam from the scratchpad, if the last steam game exited,
+        # start picom if there are no games anymore.
+        # all checks will be done inside those functions
+        windows_account.show_steam()
+        windows_account.start_eye_candy_services(picom_manager)
 
 
 def on_window_focus(i3, e) -> None:
     """Handler for the window focus event and also for binding event
-    Changes the tiling indicator"""
+    Changes the tiling indicator
+    """
     global FOCUSED
     # to get the correct layout of a container, we have to take it from it's parent
     # the reason isn't really obvious. Unless it's a workspace
@@ -284,21 +280,21 @@ def on_window_focus(i3, e) -> None:
     if focused.window_class is None:
         return
     # this is the only way to intercept Steam from appearing over game
-    if STEAM_GAMES and focused.window_class.lower() == 'steam':
-        windows_account.hide_steam(STEAM_GAMES, e.container)
+    if focused.window_class.lower() == 'steam':
+        windows_account.hide_steam(e.container)
     update_binding_modes(focused)
     FOCUSED = focused.id
 
 
 def on_binding_change(i3, e) -> None:
     """Binding change handler. Excludes mode changes,
-    the processing is equal to on_window_focus"""
+    the processing is equal to on_window_focus
+    """
     if e.binding.command.startswith('nop'):
         shortcut = (*e.binding.event_state_mask, e.binding.symbol)
         match NOP_SHORTCUTS.get(shortcut):
             case 'go_default':
                 windows_account.go_default()
-                i3.command('workspace 1; workspace 4')
                 sendmessage('Go default', 'Applications were brought to their assigned workspaces', '2700')
             case 'open_mpv':
                 mpv = subprocess.Popen(['mpv', paste()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -361,5 +357,5 @@ i3.on(Event.WINDOW_MOVE, on_window_move)
 # Start the main loop and wait for events to come in.
 try:
     i3.main()
-except Exception as e:
-    sendmessage('ERROR', str(e), urgency='critical')
+except Exception:
+    sendmessage('ERROR', format_exc(), urgency='critical')

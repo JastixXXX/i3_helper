@@ -1,10 +1,11 @@
 import subprocess
 import os
+from re import fullmatch, IGNORECASE
 from .config import (
     BACKUPS, PS2_DIR, COMPOSITOR_PROCESS_NAME,
     COMPOSITOR_SERVICE_NAME, COMPOSITOR_LAUNCH,
     REDSHIFT_SERVICE_NAME, REDSHIFT_PROCESS_NAME,
-    REDSHIFT_LAUNCH
+    REDSHIFT_LAUNCH, GAMES
 )
 from datetime import datetime
 from glob import glob
@@ -199,7 +200,7 @@ def fix_particles() -> None:
     fixes if necessary. This behavior is required every time,
     the game is launched or closed"""
 
-    def check_strings(file_path: str, proper_strings: dict) -> None:
+    def check_strings(file_path: str, proper_strings: dict[str, str]) -> None:
         """Checks the file for listed strings. If sees any difference - 
         replaces those strings to proper ones"""
         # flag to rewrite the file if there were changes
@@ -246,6 +247,7 @@ def process_searcher(proc_name: str) -> bool:
     except subprocess.CalledProcessError:
         return False
     
+
 def process_killer(proc_name: str) -> None:
     """Tries to gently kill a process for three times, then tries
     to terminate it if no success"""
@@ -264,6 +266,7 @@ def process_killer(proc_name: str) -> None:
     except subprocess.CalledProcessError:
         pass
 
+
 def pid_searcher(proc_name: str) -> str|None:
     """Searches the given process name among all processes,
     return it's PID if found or None if no process with such
@@ -279,15 +282,66 @@ def pid_searcher(proc_name: str) -> str|None:
     except subprocess.CalledProcessError:
         return None
     
+
 def find_window_by_pid(pid: str) -> int|None:
-    """Searches window id by process PID. Process has it's window
-    id in it's variables, so the function parses them
+    """Searches window id by process PID. Process may have
+    it's window id in it's variables, so the function parses them
     """
     with open(f'/proc/{pid}/environ', 'r') as f:
         for var in f.read().split('\0'):
             var_name, var_val = var.split('=')
             if var_name == 'WINDOWID':
                 return int(var_val)
+
+
+def get_client_pid_by_id(win_id: int) -> int|None:
+    """Requests WM_CLIENT_LEADER property. If we got some
+    window id which isn't equal to win_id, means we are
+    dealing with the child window, return the value. If
+    window id we got is the same as win_id, it's not a
+    child window, return None
+
+    Args:
+        win_id (int): window id to look parent for
+
+    Returns:
+        int|None: parent window id or None if window
+                with win_id has no parent
+    """
+    try:
+        # getting something like: 'WM_CLIENT_LEADER(WINDOW): window id # 0x5c00001\n'
+        result = subprocess.run(
+            ['xprop', '-id', str(win_id), 'WM_CLIENT_LEADER'],
+            text=True,
+            capture_output=True,
+            check=True
+        ).stdout
+        # the property can absent
+        if 'not found' in result:
+            return None
+        # clean unnecessary strings in the output, convert hex string to int
+        result = int(result.replace('WM_CLIENT_LEADER(WINDOW): window id # ', '').strip(), 16)
+        if result != win_id:
+            return result
+    except subprocess.CalledProcessError:
+        return None   
+
+
+def it_is_a_game(win_cls: str) -> bool:
+    """Checks if a given string matches any pattern in
+    GAMES list
+
+    Args:
+        win_cls (str): window class name which can be a game
+
+    Returns:
+        bool: verdict
+    """
+    for game in GAMES:
+        if fullmatch(game, win_cls, IGNORECASE):
+            return True
+    return False
+
 
 class CompositorManager:
     """This class keeps track of the timers, designated
@@ -412,7 +466,7 @@ class CompositorManager:
                     REDSHIFT_LAUNCH
                 )                
 
-        # if game desappeared but the timer to stop picom
+        # if game disappeared but the timer to stop picom
         # is set - stop this timer and clear it's event
         if self.compositor_killer_event.is_set() and self.compositor_killer is not None:
             self.compositor_killer.cancel()
