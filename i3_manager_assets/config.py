@@ -10,6 +10,8 @@ class Backup:
     google drive and local drive. Makes no sense to backup only on
     gdrive. Unreliable
 
+    name_in_message: the name, which will be
+            shown in notification
     source_location: what to backup, path
     backup_dir: where to backup locally, path
     backup_amount: last three backups cover last
@@ -31,6 +33,7 @@ class Backup:
     
     def __init__(
         self,
+        name_in_message: str,
         source_location: str,
         backup_dir: str,
         backup_amount: int = 4,
@@ -38,6 +41,7 @@ class Backup:
         sync_gdrive: bool = False,
         gdrive_args: list|None = None        
     ) -> None:
+        self.name_in_message = name_in_message
         self.source_location = source_location
         self.backup_dir = backup_dir
         self.backup_amount = backup_amount
@@ -50,10 +54,12 @@ class Backup:
 # otherwise all backups of all apps will be messed up
 BACKUPS = {
     '^keepassxc$': Backup(
+        name_in_message='KeePassXC',
         source_location=expanduser('~/Documents/Kee/'),
         backup_dir='/mnt/kllisre/Backups/Kee/'
     ),
     '^obsidian$': Backup(
+        name_in_message='Obsidian',
         source_location=expanduser('~/Documents/ObsidianVault/'),
         backup_dir='/mnt/kllisre/Backups/Obsidian/',
         backup_amount=50
@@ -131,13 +137,13 @@ DEFAULT_ASSIGNMENT = [
     DefaultAssignment('^firefox$', ws=4),
     DefaultAssignment('^steam$', ws=10),
     DefaultAssignment('^obs$', output=list(OUTPUTS.keys())[0]),
-    DefaultAssignment('^mpv$', share_screen=False, output=list(OUTPUTS.keys())[0]),
+    DefaultAssignment('^mpv$', share_screen=False, output=list(OUTPUTS.keys())[1]),
     DefaultAssignment('^virt-manager$', share_screen=False, output=list(OUTPUTS.keys())[0]),
     DefaultAssignment('^keepassxc$', output=list(OUTPUTS.keys())[0]),
     DefaultAssignment('^teamspeak$', ws=2),
     DefaultAssignment('^obsidian$', output=list(OUTPUTS.keys())[0]),
     DefaultAssignment('^wireshark$', output=list(OUTPUTS.keys())[0]),
-    DefaultAssignment('^transmission-gtk^', ws=10),
+    DefaultAssignment('^transmission-gtk$', ws=10),
     DefaultAssignment('^gimp$', share_screen=False, ws=10),
 ]
 
@@ -151,6 +157,8 @@ NOP_SHORTCUTS = {
     ('ctrl', 'Mod4', 's'): 'exchange_screens',
     ('ctrl', 'Mod4', 'j'): 'move_to_left',
     ('ctrl', 'Mod4', 'semicolon'): 'move_to_right',
+    # win alt p
+    ('Mod1', 'Mod4', 'p'): 'paste_clipboard',
 }
 
 # screen tags, which windows will be exchanged with each
@@ -195,11 +203,17 @@ REDSHIFT_SERVICE_NAME = 'redshift.service'
 REDSHIFT_PROCESS_NAME = 'redshift-gtk'
 REDSHIFT_LAUNCH = ['/usr/bin/redshift-gtk']
 
-# Special case - ws where xray proxy should sit. In my setup it
-# gets launched in a terminal emulator, we can't assign all
-# terminal windows to that ws
-XRAY_WS = 10
+# Some apps work entirely in terminal. Yes, some can be daemonized
+# but not all of them and pretty often it's nice to see logs
+# right away. For these apps we can assign default ws too
+# key - app name for pgrep, value - the assigned ws
+TERMINAL_APPS = {
+    'xray': 10,
+    'snx-rs': 10
+}
 
+# special ws for all almost daemons. Windows don't get touched there
+WS_SPECIAL = 10
 # a list of regex patterns to distinguish games. Steam games
 # look like steam_app_12345
 GAMES = [

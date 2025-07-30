@@ -8,17 +8,18 @@ from traceback import format_exc
 from pyperclip import paste
 from re import fullmatch, IGNORECASE
 from i3ipc import Connection, Event, con
+from time import sleep
+from pyautogui import write
 from i3_manager_assets.windows_account import WindowsAccount
 from i3_manager_assets.additional_funcs import (
     make_backup, fix_particles, sendmessage,
-    CompositorManager, it_is_a_game
+    CompositorManager, it_is_a_game, ersatz_clipboard_paste
 )
 from i3_manager_assets.config import (
     BACKUPS, GENMON_OUTPUT_MAPPING, COLORS,
     NOTIFICATION_CLASS, NOP_SHORTCUTS, EXCHANGE_SCREENS,
     VIDEOPLAYER
 )
-from time import sleep
 
 
 #################### just shared variables ###################
@@ -309,8 +310,8 @@ def on_binding_change(i3, e) -> None:
                 # but first get actual containers from ids
                 ws_cons = []
                 for ws_id in visible_ws:
-                    # if any of these workspaces are named - return
                     # we don't work with such
+                    # if any of these workspaces are named - return
                     if (ws_con := i3.get_tree().find_by_id(ws_id)).num == -1:
                         return
                     ws_cons.append(ws_con)
@@ -326,6 +327,8 @@ def on_binding_change(i3, e) -> None:
                 windows_account.move_left_right('move_to_left', i3.get_tree().find_focused())
             case 'move_to_right':
                 windows_account.move_left_right('move_to_right', i3.get_tree().find_focused())
+            case 'paste_clipboard':
+                ersatz_clipboard_paste()
             case _:
                 return
     if 'mode' not in e.binding.command:

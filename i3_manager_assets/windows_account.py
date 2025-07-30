@@ -5,7 +5,7 @@ from re import fullmatch, IGNORECASE
 
 from i3_manager_assets.config import (
     OUTPUTS, DEFAULT_ASSIGNMENT, NON_BANISHING_APPS,
-    LEFT_RIGHT, XRAY_WS
+    LEFT_RIGHT, TERMINAL_APPS, WS_SPECIAL
 )
 from .additional_funcs import (
         pid_searcher, find_window_by_pid, get_client_pid_by_id,
@@ -38,6 +38,9 @@ class WindowsAccount:
                     the id of this another window be recorded here
             w_floating: this state is taken into account when
                     searching new ws for a window
+            w_terminal_app: special case when apps, running in a
+                    terminal won't be treated as a terminal, but
+                    as standalone apps
         """
         w_con_id: int
         w_win_id: int
@@ -49,6 +52,7 @@ class WindowsAccount:
         w_default_ws: int = 0
         w_sharing: bool = True
         w_parent_id: int|None = None
+        w_terminal_app: bool = False
 
 
     def __init__(self, i3: Connection) -> None:
@@ -255,6 +259,13 @@ class WindowsAccount:
                 app.w_default_ws = def_ass.ws
                 app.w_default_output = def_ass.output
                 app.w_sharing = def_ass.share_screen                
+                return app
+        # check if it's a terminal app
+        for term_app_name, term_app_ws in TERMINAL_APPS.items():
+            term_app_win_id = self._get_term_app_window_id(term_app_name)
+            if app.w_win_id == term_app_win_id:
+                # it has special ws despite terminal may be non banishing
+                app.w_default_ws = term_app_ws
                 break
         return app
 
@@ -307,6 +318,8 @@ class WindowsAccount:
         Returns:
             bool: verdict
         """
+        if app.w_current_ws == app.w_default_ws == WS_SPECIAL:
+            return False
         # get all apps sitting on the current ws
         ws_windows = self._get_tracked_windows_of_ws(app.w_current_ws)
         # remove our new app from the list because it was
@@ -352,12 +365,18 @@ class WindowsAccount:
         return False
 
 
-    def _get_xray_window_id(self) -> int|None:
-        """Searches xray window id
+    def _get_term_app_window_id(self, app_name: str) -> int|None:
+        """Searches terminal app window id by the
+        given name
+
+        Args:
+            app_name (str): app name to look for
+        Returns:
+            int|None: pid if found
         """
-        xray_pid = pid_searcher('xray')
-        if xray_pid is not None:
-            return find_window_by_pid(xray_pid)
+        terminal_app_pid = pid_searcher(app_name)
+        if terminal_app_pid is not None:
+            return find_window_by_pid(terminal_app_pid)
 
 
     def _show_ws_with_windows(self) -> None:
@@ -430,17 +449,22 @@ class WindowsAccount:
         if new_window is None:
             return
         self.windows.append(new_window)
-        # xray is a special case because it runs inside of a terminal
+        # terminal apps are special cases because they run inside of a terminal
         # window and terminal containing it should be moved to the predefined
-        # ws. Xray also requires some time to launch, otherwise
+        # ws. Apps also require some time to launch, otherwise
         # we can't distinguish what kind of terminal is getting opened
-        sleep(0.1)
-        xray_win_id = self._get_xray_window_id()
-        if new_window.w_win_id == xray_win_id:
-            # it has special ws despite terminal may be non banishing
-            new_window.w_default_ws = XRAY_WS
+        sleep(0.2)
+        for term_app_name, term_app_ws in TERMINAL_APPS.items():
+            term_app_win_id = self._get_term_app_window_id(term_app_name)
+            if new_window.w_win_id == term_app_win_id:
+                # it has special ws despite terminal may be non banishing
+                new_window.w_default_ws = term_app_ws
+                new_window.w_terminal_app = True
+                break
         # window can spawn two kind of windows - transient and actual child.
         # we consider both as children and have to check for both.
+        # terminal apps are a special case again here, we don't expect
+        # them have parents, neither they have children, but can have transient
         parent = None
         # 1. Check for transient because it's easy
         if window.ipc_data['window_properties']['transient_for'] is not None:
@@ -449,7 +473,7 @@ class WindowsAccount:
         # invisible leader, acting like a daemon. In this case we are
         # gonna assume that focused window is the parent. But if there
         # is no leader, it's definitely not a child window of some app
-        else:
+        elif not new_window.w_terminal_app:
             leader_id = get_client_pid_by_id(new_window.w_win_id)
             if leader_id is not None:
                 # first try direct search
@@ -462,11 +486,16 @@ class WindowsAccount:
                     # we didn't find the parent
                     if focused_accounted is not None and focused_accounted.w_cls == new_window.w_cls:
                         parent = focused_accounted
-        # move a new window to it's parent, if it's not already there
-        if parent is not None:
+        # assign paren, ofc if parens isn't a terminal app
+        # it shouldn't be the same con, neither an app of some other class
+        if (
+            parent is not None and
+            parent.w_cls == new_window.w_cls and
+            parent.w_con_id != new_window.w_con_id
+        ):
             new_window.w_parent_id = parent.w_con_id
-        if any([ fullmatch(app, new_window.w_cls, IGNORECASE) for app in NON_BANISHING_APPS ]):
-            return
+        # if any([ fullmatch(app, new_window.w_cls, IGNORECASE) for app in NON_BANISHING_APPS ]):
+        #     return
         # if a new window was spawned by an existing one -
         # move new one on it's ws, unless the presumable
         # parent is already closed
@@ -554,8 +583,8 @@ class WindowsAccount:
             setattr(win, 'w_current_ws', ws)
             setattr(win, 'w_current_output', output)
 
-        # xray lives in a terminal, if launched at all. Find it's id
-        xray_id = self._get_xray_window_id()
+        # terminal apps live in a terminal, if launched at all. Find it's ids
+        # xray_id = self._get_xray_window_id()
         # we should get what ws is where. Some are predefined
         # in the config, but not all of them
         # map ws to the output name
@@ -582,10 +611,10 @@ class WindowsAccount:
         for win in self.windows:
             if win.w_current_ws == 99:
                 continue
-            # process our special case - xray
-            if xray_id is not None and win.w_win_id == xray_id and win.w_current_ws != XRAY_WS:
-                self._move_window(win, ws=XRAY_WS)
-                continue
+            # # process our special case - xray
+            # if xray_id is not None and win.w_win_id == xray_id and win.w_current_ws != XRAY_WS:
+            #     self._move_window(win, ws=XRAY_WS)
+            #     continue
             if win.w_default_ws and win.w_current_ws != win.w_default_ws:
                 # if it's non banishing app, we don't move a window
                 # if a window of the same class is already there
@@ -801,6 +830,7 @@ class WindowsAccount:
         # look for steam on scratchpad
         steam_in_scr = self.i3.get_tree().scratchpad().find_classed('steam')
         if steam_in_scr:
+            sleep(1)
             # bring in a normal ws all windows if possible
             for win in steam_in_scr:
                 steam_win = self._get_tracked_window_by_con_id(win.id)
@@ -811,8 +841,8 @@ class WindowsAccount:
                 # if there are games still open, not point to continue
                 else:
                     return
-        # show steam on the screen
-        self.i3.command(f'workspace {steam[0].w_current_ws}')
+            # show steam on the screen only if it was in teh scratchpad
+            self.i3.command(f'workspace {steam[0].w_current_ws}')
         
 
     def start_eye_candy_services(self, compositor_manager: CompositorManager) -> None:

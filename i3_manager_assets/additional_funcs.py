@@ -12,6 +12,8 @@ from glob import glob
 from time import sleep
 # from i3ipc import con
 from threading import Timer, Event
+from pyperclip import paste
+from pyautogui import hotkey, keyDown, keyUp, press
 
 
 # ======================= backups =======================
@@ -134,7 +136,7 @@ def make_backup(app_cls: str) -> str:
         os.makedirs(full_backup_path)
         # drop files there
         subprocess.run(['cp', '-r', *source_files, full_backup_path])
-        return_message += f'Created new local today backup of <b>{app_cls}</b>'
+        return_message += f'Created new local today backup of <b>{BACKUPS[app_cls].name_in_message}</b>'
         # add newly created dir
         backup_dir_content.append(newest_mtime)
         # if we created a folder, probably we have to remove redundant dirs:
@@ -227,104 +229,6 @@ def fix_particles() -> None:
             with open(file_path, 'w') as f:
                 f.writelines(new_ini_file)
     check_strings(f'{PS2_DIR}UserOptions.ini', {'ParticleLOD': '0'})
-
-
-# ======================= misc ==========================
-def sendmessage(title: str, message: str='', timeout: str='10000', urgency: str='normal') -> None:
-    """Sends a message to notification daemon in a separate process.
-    urgency=critical makes a message stay until closed manually,
-    for other message types types don't forget timeout, default
-    timeout is set to 10 seconds"""
-    # uses i3 icon for the message
-    icon = '/usr/share/doc/i3/logo-30.png'
-    subprocess.Popen(['notify-send', '-i', icon, '-t', timeout, '-u', urgency, title, message])
-
-def process_searcher(proc_name: str) -> bool:
-    """Searches the process by name, returns True if found"""        
-    try:
-        subprocess.run(['pgrep', '-U', str(os.getuid()), proc_name],  check=True)
-        return True
-    except subprocess.CalledProcessError:
-        return False
-    
-
-def process_killer(proc_name: str) -> None:
-    """Tries to gently kill a process for three times, then tries
-    to terminate it if no success"""
-    try:
-        for _ in range(3):
-            # gentle kills a user owned process
-            if process_searcher(proc_name):
-                subprocess.Popen(['pkill', '-U', str(os.getuid()), proc_name])
-            else:
-                break
-            sleep(1)
-        else:
-            # terminate
-            if process_searcher(proc_name):
-                subprocess.Popen(['pkill', '-9', '-U', str(os.getuid()), proc_name])    
-    except subprocess.CalledProcessError:
-        pass
-
-
-def pid_searcher(proc_name: str) -> str|None:
-    """Searches the given process name among all processes,
-    return it's PID if found or None if no process with such
-    name
-    """
-    try:
-        return subprocess.run(
-            ['pgrep', '-U', str(os.getuid()), proc_name],
-            text=True,
-            capture_output=True,
-            check=True
-        ).stdout.strip()
-    except subprocess.CalledProcessError:
-        return None
-    
-
-def find_window_by_pid(pid: str) -> int|None:
-    """Searches window id by process PID. Process may have
-    it's window id in it's variables, so the function parses them
-    """
-    with open(f'/proc/{pid}/environ', 'r') as f:
-        for var in f.read().split('\0'):
-            var_name, var_val = var.split('=')
-            if var_name == 'WINDOWID':
-                return int(var_val)
-
-
-def get_client_pid_by_id(win_id: int) -> int|None:
-    """Requests WM_CLIENT_LEADER property. If we got some
-    window id which isn't equal to win_id, means we are
-    dealing with the child window, return the value. If
-    window id we got is the same as win_id, it's not a
-    child window, return None
-
-    Args:
-        win_id (int): window id to look parent for
-
-    Returns:
-        int|None: parent window id or None if window
-                with win_id has no parent
-    """
-    try:
-        # getting something like: 'WM_CLIENT_LEADER(WINDOW): window id # 0x5c00001\n'
-        result = subprocess.run(
-            ['xprop', '-id', str(win_id), 'WM_CLIENT_LEADER'],
-            text=True,
-            capture_output=True,
-            check=True
-        ).stdout
-        # the property can absent
-        if 'not found' in result:
-            return None
-        # clean unnecessary strings in the output, convert hex string to int
-        result = int(result.replace('WM_CLIENT_LEADER(WINDOW): window id # ', '').strip(), 16)
-        if result != win_id:
-            return result
-    except subprocess.CalledProcessError:
-        return None   
 
 
 def it_is_a_game(win_cls: str) -> bool:
@@ -479,3 +383,161 @@ class CompositorManager:
         self.compositor_starter = Timer(4, task, args=(self.compositor_starter_event,))
         self.compositor_starter.start()
         return
+
+
+# ======================= misc ==========================
+def sendmessage(title: str, message: str='', timeout: str='10000', urgency: str='normal') -> None:
+    """Sends a message to notification daemon in a separate process.
+    urgency=critical makes a message stay until closed manually,
+    for other message types types don't forget timeout, default
+    timeout is set to 10 seconds"""
+    # uses i3 icon for the message
+    icon = '/usr/share/doc/i3/logo-30.png'
+    subprocess.Popen(['notify-send', '-i', icon, '-t', timeout, '-u', urgency, title, message])
+
+def process_searcher(proc_name: str) -> bool:
+    """Searches the process by name, returns True if found"""        
+    try:
+        subprocess.run(['pgrep', '-U', str(os.getuid()), proc_name],  check=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+    
+
+def process_killer(proc_name: str) -> None:
+    """Tries to gently kill a process for three times, then tries
+    to terminate it if no success"""
+    try:
+        for _ in range(3):
+            # gentle kills a user owned process
+            if process_searcher(proc_name):
+                subprocess.Popen(['pkill', '-U', str(os.getuid()), proc_name])
+            else:
+                break
+            sleep(1)
+        else:
+            # terminate
+            if process_searcher(proc_name):
+                subprocess.Popen(['pkill', '-9', '-U', str(os.getuid()), proc_name])    
+    except subprocess.CalledProcessError:
+        pass
+
+
+def pid_searcher(proc_name: str) -> str|None:
+    """Searches the given process name among all processes,
+    return it's PID if found or None if no process with such
+    name
+    """
+    try:
+        return subprocess.run(
+            ['pgrep', '-U', str(os.getuid()), proc_name],
+            text=True,
+            capture_output=True,
+            check=True
+        ).stdout.strip()
+    except subprocess.CalledProcessError:
+        return None
+    
+
+def find_window_by_pid(pid: str) -> int|None:
+    """Searches window id by process PID. Process may have
+    it's window id in it's variables, so the function parses them
+    """
+    with open(f'/proc/{pid}/environ', 'r') as f:
+        for var in f.read().split('\0'):
+            var_name, var_val = var.split('=')
+            if var_name == 'WINDOWID':
+                return int(var_val)
+
+
+def get_client_pid_by_id(win_id: int) -> int|None:
+    """Requests WM_CLIENT_LEADER property. If we got some
+    window id which isn't equal to win_id, means we are
+    dealing with the child window, return the value. If
+    window id we got is the same as win_id, it's not a
+    child window, return None
+
+    Args:
+        win_id (int): window id to look parent for
+
+    Returns:
+        int|None: parent window id or None if window
+                with win_id has no parent
+    """
+    try:
+        # getting something like: 'WM_CLIENT_LEADER(WINDOW): window id # 0x5c00001\n'
+        result = subprocess.run(
+            ['xprop', '-id', str(win_id), 'WM_CLIENT_LEADER'],
+            text=True,
+            capture_output=True,
+            check=True
+        ).stdout
+        # the property can absent
+        if 'not found' in result:
+            return None
+        # clean unnecessary strings in the output, convert hex string to int
+        result = int(result.replace('WM_CLIENT_LEADER(WINDOW): window id # ', '').strip(), 16)
+        if result != win_id:
+            return result
+    except subprocess.CalledProcessError:
+        return None   
+
+
+def ersatz_clipboard_paste() -> None:
+    """Types clipboard content, switches language if required
+    """
+    KEY_MAP = {
+        'а': 'f', 'б': ',', 'в': 'd', 'г': 'u', 'д': 'l', 'е': 't', 'ё': '`',
+        'ж': ';', 'з': 'p', 'и': 'b', 'й': 'q', 'к': 'r', 'л': 'k', 'м': 'v',
+        'н': 'y', 'о': 'j', 'п': 'g', 'р': 'h', 'с': 'c', 'т': 'n', 'у': 'e',
+        'ф': 'a', 'х': '[', 'ц': 'w', 'ч': 'x', 'ш': 'i', 'щ': 'o', 'ъ': ']',
+        'ы': 's', 'ь': 'm', 'э': "'", 'ю': '.', 'я': 'z',
+        '"': '@', '№': '#', ';': '$', ':': '^', '?': '&'
+    }
+
+    def switch_layout():
+        """Just presses a keys combo
+        """
+        hotkey('shift', 'ctrl')
+        sleep(0.1)
+
+    def type_special_case(char: str):
+        """For some weird reason, symbols ()< don't get
+        typed on a remote machine and require special care
+
+        Args:
+            char (str): symbol, one of "()<"
+        """
+        keyDown('shift')
+        sleep(0.5)
+        match char:
+            case '(':
+                press('9')
+            case ')':
+                press('0')
+            case '<':
+                press(',')
+        keyUp('shift')
+        (sleep(0.5))
+
+    current_layout_latin = True
+
+    for character in paste():
+        if character.lower() in KEY_MAP:
+            character = KEY_MAP[character.lower()]
+            # switch language if current is english
+            if current_layout_latin:
+                current_layout_latin = False
+                switch_layout()
+        # switch if current isn't english and we didn't find
+        # the symbol in mapping
+        elif not current_layout_latin:
+            current_layout_latin = True
+            switch_layout()
+        # process special characters
+        if character in '<()':
+            type_special_case(character)
+        # type
+        else:
+            press(character)
+        sleep(0.02)
