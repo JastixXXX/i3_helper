@@ -486,7 +486,7 @@ class WindowsAccount:
                     # we didn't find the parent
                     if focused_accounted is not None and focused_accounted.w_cls == new_window.w_cls:
                         parent = focused_accounted
-        # assign paren, ofc if parens isn't a terminal app
+        # assign parent, ofc if parent isn't a terminal app
         # it shouldn't be the same con, neither an app of some other class
         if (
             parent is not None and
@@ -494,8 +494,8 @@ class WindowsAccount:
             parent.w_con_id != new_window.w_con_id
         ):
             new_window.w_parent_id = parent.w_con_id
-        # if any([ fullmatch(app, new_window.w_cls, IGNORECASE) for app in NON_BANISHING_APPS ]):
-        #     return
+        if any([ fullmatch(app, new_window.w_cls, IGNORECASE) for app in NON_BANISHING_APPS ]):
+            return
         # if a new window was spawned by an existing one -
         # move new one on it's ws, unless the presumable
         # parent is already closed
